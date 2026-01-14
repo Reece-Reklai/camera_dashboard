@@ -1,20 +1,18 @@
-#!/usr/bin/env python3
 """
 Multi-camera grid viewer - COMPLETE PRODUCTION VERSION.
 Single click = toggle fullscreen. Hold 400ms = swap mode.
 """
 
-# === IMPORTS - What each library does ===
 print("DEBUG: Loading libraries...")
 from PyQt6 import QtCore, QtGui, QtWidgets  # GUI framework - makes windows, buttons
 from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QThread, QTimer  # Core Qt features
 import sys  # System utilities - exit cleanly
 import cv2  # OpenCV - reads camera video frames
-import time  # Timing - measure hold duration
+import time 
 import traceback  # Error reporting - show crashes clearly
 from collections import deque  # Ring buffer - keeps last 4 frames
 from cv2_enumerate_cameras import enumerate_cameras  # Finds all /dev/video devices
-import qdarkstyle  # Dark theme - looks professional
+import qdarkstyle  
 import imutils  # Image resizing utilities
 import atexit  # Runs cleanup code when program exits
 import signal  # Handles Ctrl+C gracefully
