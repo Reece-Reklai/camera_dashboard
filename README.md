@@ -5,7 +5,7 @@ Fullscreen multi n-camera setup display with click-to-fullscreen and hold-to-swa
 # Quick Start
 
 # 1. Install
-Ubuntu/Linux - Recommended (isolated environment)
+>> Ubuntu/Linux - Recommended (isolated environment)
 
 ## Create isolated Python environment -> Activate it -> Install package safely isolated from systems
 ```
@@ -16,11 +16,15 @@ pip install PyQt6 opencv-python qdarkstyle imutils cv2-enumerate-cameras
 ```
 
 ## Run (source if you havent before running)
+```
 source camera_env/bin/activate
 python main.py
+```
 
 ## To deactivate env later:
+```
 deactivate
+```
 
 ## Application Features
 
