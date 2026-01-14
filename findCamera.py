@@ -48,7 +48,7 @@ class CameraWidget(QtWidgets.QWidget):
                 # Set MJPG codec for better performance
                 self.capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
                 self.online = True
-                print(f"✅ Camera {self.camera_stream_link} working with {api} (MJPG)")
+                print(f"Camera {self.camera_stream_link} working with {api} (MJPG)")
                 return
         print(f"❌ Camera {self.camera_stream_link} failed")
 
@@ -158,7 +158,7 @@ if __name__ == "__main__":
     screen = app.primaryScreen().availableGeometry()
     
     # Find working cameras
-    print("🔍 Scanning for working cameras...")
+    print("Scanning for working cameras...")
     working_cameras = []
     
     test_indices = [0, 1, 2, 3, 4] + [cam.index for cam in enumerate_cameras(cv2.CAP_V4L2)]
@@ -169,7 +169,7 @@ if __name__ == "__main__":
         if cap.isOpened():
             working_cameras.append(i)
             cap.release()
-            print(f"✅ Found working camera: /dev/video{i}")
+            print(f"Found working camera: /dev/video{i}")
         else:
             cap.release()
 
