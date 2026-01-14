@@ -1,6 +1,6 @@
 # **Camera Grid Viewer**
 
-## Fullscreen multi-camera (up to 9) setup display with click-to-fullscreen and hold-to-swap.
+## Fullscreen multi-camera (up to 9) setup display with click-to-fullscreen and hold-release to swap camera windows.
 
 # Quick Start
 
