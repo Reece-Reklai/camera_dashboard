@@ -18,7 +18,7 @@ import atexit  # Runs cleanup code when program exits
 import signal  # Handles Ctrl+C gracefully
 print("DEBUG: All libraries loaded")
 
-# === CAMERA THREAD - Reads video without freezing GUI ===
+# CAMERA THREAD = Reads video (without freezing hopefully)
 class CaptureWorker(QThread):
     """
     Runs in background thread. Reads camera frames every 10ms.
@@ -61,7 +61,7 @@ class CaptureWorker(QThread):
                 # Send frame to GUI thread
                 self.buffer.append(frame)
                 self.frame_ready.emit(frame)
-                time.sleep(0.01)  # Don't overload CPU
+                time.sleep(0.01)  # Don't overload CPU because my main targets were Raspberry Pis
                 
             except Exception:
                 traceback.print_exc()
@@ -98,7 +98,7 @@ class CaptureWorker(QThread):
         self.wait(timeout=2000)  # Wait up to 2 seconds
         self._close_capture()
 
-# === CAMERA WIDGET - Each camera lives here ===
+# CAMERA WIDGET = Each camera lives here
 class CameraWidget(QtWidgets.QWidget):
     """
     One widget per camera. Shows video, handles clicks, fullscreen, swapping.
@@ -120,17 +120,17 @@ class CameraWidget(QtWidgets.QWidget):
         self.maintain_aspect_ratio = aspect_ratio
         self.camera_stream_link = stream_link  # Which /dev/video?
         
-        # Unique ID - prevents "wrong camera" bug
+        # Unique ID for each camera widget
         self.widget_id = f"cam{stream_link}_{id(self)}"
 
         # State flags
         self.is_fullscreen = False
         self.grid_position = None  # (row, col) in grid
-        self._saved_parent = None  # Where we were before fullscreen
+        self._saved_parent = None  # Parent at fullscreen time
         self._saved_position = None
         self._press_widget_id = None  # Locks exact widget during click
         self._press_time = 0  # Click timing
-        self._grid_parent = None  # Layout parent at press time
+        self._grid_parent = None  # Layout parent at click/press time
 
         # Colors
         self.normal_style = "border: 2px solid #555; background: black;"
@@ -148,7 +148,7 @@ class CameraWidget(QtWidgets.QWidget):
         self.video_label.setMouseTracking(True)
         self.video_label.setObjectName(f"{self.widget_id}_label")
 
-        # Layout - video fills entire widget
+        # Layout = video fills entire widget
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.video_label)
@@ -163,13 +163,13 @@ class CameraWidget(QtWidgets.QWidget):
         self.worker.status_changed.connect(self.on_status_changed)
         self.worker.start()
 
-        # FPS timer - runs on main thread
+        # FPS timer = runs on main thread
         self.ui_timer = QTimer(self)
         self.ui_timer.setInterval(1000)
         self.ui_timer.timeout.connect(self._print_fps)
         self.ui_timer.start()
 
-        # Mouse event handling - CRITICAL for correct behavior
+        # Mouse event handling = hoping for correct behavior
         self.installEventFilter(self)
         self.video_label.installEventFilter(self)
         print(f"DEBUG: Widget {self.widget_id} ready")
@@ -212,7 +212,7 @@ class CameraWidget(QtWidgets.QWidget):
         4. Short click → fullscreen toggle
         """
         try:
-            # Wrong widget? Ignore (safety check)
+            # Wrong widget? Ignore the event
             if (event.button() != QtCore.Qt.MouseButton.LeftButton or 
                 not self._press_widget_id or self._press_widget_id != self.widget_id):
                 return True
@@ -220,7 +220,7 @@ class CameraWidget(QtWidgets.QWidget):
             hold_time = (time.time() * 1000.0) - self._press_time
             print(f"DEBUG: Release {self.widget_id}, hold={hold_time:.0f}ms")
 
-            # No swap manager? Default to fullscreen
+            # Need layout parent for swap operations
             swap_parent = self._grid_parent
             if not swap_parent or not hasattr(swap_parent, 'selected_camera'):
                 self._reset_mouse_state()
@@ -284,7 +284,7 @@ class CameraWidget(QtWidgets.QWidget):
                 return
 
             layout = layout_parent.layout()
-            # Remove both, add swapped - ATOMIC operation
+            # Remove both, add swapped = ATOMIC operation
             layout.removeWidget(source)
             layout.removeWidget(target)
             layout.addWidget(target, *source_pos)
@@ -352,9 +352,17 @@ class CameraWidget(QtWidgets.QWidget):
     @pyqtSlot(object)
     def on_frame(self, frame):
         """
-        Called by worker thread signal. Runs on main GUI thread.
-        Converts OpenCV frame → Qt image → display.
+        Worker thread tells us "camera alive=True/False"  
+        @pyqtSlot makes sure we update GUI on main thread
+        
+        Mental model:
+        Camera dies → Worker: "online=False" ──signal───> on_status_changed()
+        Camera back → Worker: "online=True" ──signal───> on_status_changed()
+                                            │
+                                    Updates border/clear on MAIN thread
         """
+        # Called by worker thread signal. Runs on main GUI thread.
+        # Converts OpenCV frame → Qt image → display.
         try:
             if frame is None:
                 return
@@ -383,19 +391,28 @@ class CameraWidget(QtWidgets.QWidget):
 
     @pyqtSlot(bool)
     def on_status_changed(self, online):
-        """Camera connected/disconnected."""
+        """
+        Worker thread tells us "camera alive=True/False"  
+        @pyqtSlot makes sure we update GUI on main thread
+        
+        Mental model:
+        Camera dies → Worker: "online=False" ──signal───> on_status_changed()
+        Camera back → Worker: "online=True" ──signal───> on_status_changed()
+                                            │
+                                    Updates border/clear on MAIN thread
+        """
+        # Camera connected/disconnected
         if online:
             self.setStyleSheet(self.normal_style)
         else:
             self.video_label.clear()  # Remove stale frame
 
     def reset_style(self):
-        """Remove yellow swap border."""
+        # Remove yellow swap border
         self.video_label.setStyleSheet("")
         self.setStyleSheet(self.normal_style)
 
     def _print_fps(self):
-        """Print FPS every second."""
         try:
             now = time.time()
             elapsed = now - self.prev_time
