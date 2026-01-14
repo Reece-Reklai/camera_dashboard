@@ -1,4 +1,5 @@
 from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6.QtCore import Qt
 from cv2_enumerate_cameras import enumerate_cameras
 import qdarkstyle
 from threading import Thread
@@ -20,8 +21,18 @@ class CameraWidget(QtWidgets.QWidget):
         self.camera_stream_link = stream_link
         self.online = False
         self.capture = None
+        
+        # Fullscreen state tracking
+        self.is_fullscreen = False
+        self.original_parent = parent
+        self.original_geometry = None
+        self.grid_position = None
+        
         self.video_frame = QtWidgets.QLabel(self)
         self.video_frame.setStyleSheet("border: 2px solid #555; background: black;")
+        self.video_frame.setMouseTracking(True)
+        self.video_frame.mousePressEvent = self.toggle_fullscreen
+        self.video_frame.setScaledContents(True)
         
         # FPS tracking
         self.frame_count = 0
@@ -39,6 +50,82 @@ class CameraWidget(QtWidgets.QWidget):
         self.display_thread.start()
 
         print(f'Started camera {self.camera_stream_link}: {"✅" if self.online else "❌"}')
+
+    def toggle_fullscreen(self, event):
+        """Toggle fullscreen on video frame click"""
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            if not self.is_fullscreen:
+                self.go_fullscreen()
+            else:
+                self.exit_fullscreen()
+
+    def go_fullscreen(self):
+        """Enter fullscreen mode"""
+        if self.is_fullscreen:
+            return
+        
+        # Store original state
+        self.original_geometry = self.video_frame.geometry()
+        self.original_parent = self.video_frame.parent()
+        
+        # Find grid position from layout
+        layout = self.original_parent.layout() if self.original_parent else None
+        if layout:
+            for row in range(layout.rowCount()):
+                for col in range(layout.columnCount()):
+                    item = layout.itemAtPosition(row, col)
+                    if item and item.widget() == self.video_frame:
+                        self.grid_position = (row, col)
+                        break
+        
+        # Remove from layout
+        if layout:
+            layout.removeWidget(self.video_frame)
+        
+        # Make standalone fullscreen window
+        self.video_frame.setParent(None)
+        self.video_frame.setWindowFlags(
+            QtCore.Qt.WindowType.Window | 
+            QtCore.Qt.WindowType.FramelessWindowHint
+        )
+        self.video_frame.setWindowState(QtCore.Qt.WindowState.WindowFullScreen)
+        self.video_frame.show()
+        
+        # Update sizing for fullscreen
+        screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
+        self.screen_width = screen.width()
+        self.screen_height = screen.height()
+        self.is_fullscreen = True
+
+    def exit_fullscreen(self):
+        """Exit fullscreen mode"""
+        if not self.is_fullscreen:
+            return
+    
+        # Restore window properties
+        self.video_frame.setWindowFlags(QtCore.Qt.WindowType.Widget)
+        self.video_frame.setWindowState(QtCore.Qt.WindowState.WindowNoState)
+        
+        # Reparent to original parent
+        if self.original_parent:
+            self.video_frame.setParent(self.original_parent)
+            layout = self.original_parent.layout()
+            if layout and self.grid_position:
+                layout.addWidget(self.video_frame, *self.grid_position)
+            else:
+                layout.addWidget(self.video_frame)
+        
+        self.video_frame.show()
+        
+        # Restore original sizing
+        if self.original_geometry:
+            self.screen_width = self.original_geometry.width()
+            self.screen_height = self.original_geometry.height()
+        else:
+            self.screen_width = 640
+            self.screen_height = 480
+            
+        self.is_fullscreen = False
 
     def test_and_init_camera(self):
         # Try MJPG first, then default
@@ -90,14 +177,14 @@ class CameraWidget(QtWidgets.QWidget):
         self.frame_count += 1
         current_time = time.time()
         
-        if current_time - self.prev_time >= 1.0:  # Print FPS every second
+        if current_time - self.prev_time >= 1.0:
             fps = self.frame_count / (current_time - self.prev_time)
             print(f"📹 Camera {self.camera_stream_link} FPS: {fps:.1f}")
             self.frame_count = 0
             self.prev_time = current_time
 
     def set_frame(self):
-        """Display frame (NO CLOCK/TIMESTAMP)"""
+        """Display frame"""
         if not self.online or not self.deque:
             return
 
@@ -147,12 +234,12 @@ if __name__ == "__main__":
     
     # Main window
     mw = QtWidgets.QMainWindow()
-    mw.setWindowTitle('Dynamic Multi-Camera GUI')
+    mw.setWindowTitle('Dynamic Multi-Camera GUI - Click to Fullscreen')
     mw.setWindowFlags(QtCore.Qt.WindowType.FramelessWindowHint)
     
     central_widget = QtWidgets.QWidget()
     mw.setCentralWidget(central_widget)
-    mw.showMaximized()
+    mw.showFullScreen()
 
     # Screen dimensions
     screen = app.primaryScreen().availableGeometry()
@@ -187,7 +274,7 @@ if __name__ == "__main__":
         # Create camera widgets
         camera_widgets = []
         for cam_index in working_cameras[:9]:
-            cam_widget = CameraWidget(widget_width, widget_height, cam_index)
+            cam_widget = CameraWidget(widget_width, widget_height, cam_index, parent=central_widget)
             camera_widgets.append(cam_widget)
 
         # Place in smart grid
@@ -197,6 +284,7 @@ if __name__ == "__main__":
         for i, cam_widget in enumerate(camera_widgets):
             row = i // cols
             col = i % cols
+            cam_widget.grid_position = (row, col)  # Store position for restore
             layout.addWidget(cam_widget.get_video_frame(), row, col)
     else:
         label = QtWidgets.QLabel("No working cameras found")

@@ -116,16 +116,8 @@ class CameraWidget(QtWidgets.QWidget):
                 layout.addWidget(self.video_frame)
         
         self.video_frame.show()
-        
-        # Restore original sizing
-        if self.original_geometry:
-            self.screen_width = self.original_geometry.width()
-            self.screen_height = self.original_geometry.height()
-        else:
-            self.screen_width = 640
-            self.screen_height = 480
-            
         self.is_fullscreen = False
+        self.original_parent.window().showFullScreen()
 
     def test_and_init_camera(self):
         # Try MJPG first, then default
