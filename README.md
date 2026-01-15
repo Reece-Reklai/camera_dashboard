@@ -1,99 +1,132 @@
-# **Camera Grid Viewer**
+# Camera Grid = Raspberry Pi Setup (Manual Run)
 
-## Fullscreen multi-camera (up to 9) setup display with click-to-fullscreen and hold-release to swap camera windows.
+This guide explains how to install dependencies and start the app manually on a Raspberry Pi.
 
-# Quick Start
+## Supported OS
+- Raspberry Pi OS (Bookworm or Bullseye, 64‑bit recommended)
 
-## Prerequisites - Install Python First
+---
 
-# **Windows**
+## 1) Update the system
 
-##### Download from python.org/downloads/windows
-
-##### Check "Add Python to PATH" during install
-
-# **macOS**
-
-##### Option 1: Official installer
--   Download from python.org/downloads/macos
-
-##### Option 2: Homebrew (recommended)
-```
-brew install python3
-```
-
-# **Ubuntu Example**
-```
+```bash
 sudo apt update
-sudo apt install python3 python3-venv python3-pip
-sudo apt install python3-pyqt6
-```
-# Other linux Distros
-- Look at your main package manager (apt, dnf, pacman, yay . . .)
-
-## Verify
-```
-python3 --version
+sudo apt upgrade -y
 ```
 
-# 1. Install
+---
 
-##  Create isolated Python environment -> Activate it -> Install package safely isolated from systems
+## 2) Install system dependencies (required for PyQt6)
+
+```bash
+sudo apt install -y \
+  python3 python3-pip python3-venv \
+  libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 \
+  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+  libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 \
+  libqt6gui6 libqt6widgets6
 ```
-python3 -m venv camera_env
-source camera_env/bin/activate
+
+> These libraries prevent PyQt6 from crashing at startup on Raspberry Pi.
+
+---
+
+## 3) Create and activate a virtual environment
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+---
+
+## 4) Install Python packages
+
+```bash
 pip install --upgrade pip
-pip install PyQt6 opencv-python qdarkstyle imutils cv2-enumerate-cameras
+pip install PyQt6 opencv-python
 ```
 
--   If not required to create separated enviroment on your system OS:
+> If `opencv-python` fails to install on your Pi, use the system package instead:
+>
+> ```bash
+> sudo apt install -y python3-opencv
+> ```
 
+---
+
+## 5) Fix camera permissions (recommended)
+
+You should not run the entire app as `sudo`.  
+Instead, grant camera access to your user:
+
+```bash
+sudo usermod -aG video $USER
 ```
-pip install --upgrade pip
-pip install opencv-python qdarkstyle imutils cv2-enumerate-cameras
+
+Then log out and back in (or reboot).
+
+Check permissions:
+
+```bash
+ls -l /dev/video*
 ```
 
-# 2. Run (source if you havent before running)
+If the group is `video`, you can run the app normally.
+
+---
+
+## 6) Run the app
+
+```bash
+python3 main.py
 ```
-source camera_env/bin/activate
-python main.py
+
+---
+
+## If you must run as sudo (not recommended)
+
+This can break GUI permissions and your venv, but if you must:
+
+```bash
+sudo -E python3 main.py
 ```
 
-## To deactivate env later:
-```
-deactivate
-```
+---
 
-## Application Features
+## Dependencies Summary
 
-    Click any camera = toggle fullscreen
+Python packages (non‑stdlib):
+- PyQt6
+- opencv-python (or `python3-opencv`)
 
-    Hold 400ms = yellow border (swap mode)
+System libraries (Qt runtime):
+- libgl1, libegl1
+- libxkbcommon0, libxkbcommon-x11-0
+- libxcb-cursor0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1
+- libxcb-render-util0, libxcb-xinerama0, libxcb-xfixes0
+- libqt6gui6, libqt6widgets6
 
-    Click other camera = swap positions
+---
 
-    Click yellow camera = clear swap mode
+## About using `sudo`
 
-    Ctrl+Q = quit
+Only use `sudo` for apt install.  
+Do not run `python3 -m venv` or `pip install` with `sudo`.
 
-## Terminal prints debug activities:
+Using `sudo` for those steps:
+- Installs packages system‑wide (not inside the venv)
+- Can make the venv owned by root
+- Can break GUI permissions
 
--   Found 2 cameras: [0, 1]
--   Press cam0_140123456
--   ENTER swap cam0_140123456
--   SWAP cam0_140123456 ↔ cam1_140123789
+---
 
-## Require Packages Installments:
+## Notes
 
--   **PyQt6**
--   **opencv-python**
--   **qdarkstyle**
--   **imutils**
--   **cv2-enumerate-cameras**
+- USB cameras should be visible as `/dev/video*`
+- If no cameras are found, the app will show "NO CAMERAS FOUND"
+- Exit with Ctrl+Q or Ctrl+C in terminal
 
-## Tested
+---
 
-    Arch linux via AMD CPU and Nvidia GPU
-
-    Raspberry Pi 4 and 5 via Intel5 CPU
-
+If you want autostart or systemd support later, I can add that too.
