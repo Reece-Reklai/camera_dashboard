@@ -1,5 +1,3 @@
-# (standalone optimized copy of your app)
-# NOTE: Save as camera_grid_optimized.py and run with Python that has PyQt6 + OpenCV.
 
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
