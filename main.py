@@ -1,7 +1,8 @@
 """
 Multi-camera grid viewer
 """
-
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 import glob
 import subprocess
 from PyQt6 import QtCore, QtGui, QtWidgets  # GUI framework - makes windows, buttons
@@ -442,41 +443,93 @@ def get_smart_grid(num_cameras):
         rows = (num_cameras + cols - 1) // cols
         return rows, cols
 
+def kill_single_camera(device_path):
+    """Kill zombies for ONE device - runs in parallel."""
+    for _ in range(3):
+        subprocess.run(f"sudo fuser -vk {device_path}", shell=True, timeout=1)
+        time.sleep(0.01)
+    return device_path
+
+def nuclear_zombie_killer():
+    """PARALLEL zombie killer - kills zmc processes instantly."""
+    video_devices = glob.glob('/dev/video*')
+    if not video_devices:
+        return
+        
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(kill_single_camera, device) for device in video_devices]
+        for future in as_completed(futures):
+            future.result()
+    
+    time.sleep(0.2)
+
+def test_single_camera(cam_index):
+    """Test ONE camera - thread-safe."""
+    try:
+        subprocess.run(f"sudo fuser -vk /dev/video{cam_index}", shell=True, timeout=1)
+        cap = cv2.VideoCapture(cam_index, cv2.CAP_V4L2)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        if cap.isOpened():
+            cap.release()
+            return cam_index
+        cap.release()
+        return None
+    except:
+        return None
+
 def get_video_indexes():
     """Get all /dev/videoX indexes."""
     video_devices = glob.glob('/dev/video*')
     indexes = []
-    
     for device in sorted(video_devices):
         index = int(device.split('video')[-1])
         indexes.append(index)
-    
     return indexes
 
 def find_working_cameras():
-    """Test /dev/video0-4 + V4L2 devices."""
-    # Fix for glob pattern - explicitly loop over devices
-    video_devices = glob.glob('/dev/video*')
-    if not video_devices:
+    """FULLY CONCURRENT - runs TWICE for max reliability."""
+    print("🔥 PARALLEL NUCLEAR CLEANUP (ROUND 1)...")
+    nuclear_zombie_killer()
+    
+    indexes = get_video_indexes()
+    if not indexes:
         print("No /dev/video* devices found!")
         return []
     
-    for device in video_devices:
-        device_path = device  # /dev/video0, /dev/video1, etc.
-        subprocess.run(f"sudo fuser -vk {device_path}", shell=True)
-    
-    indexes = get_video_indexes()
+    # ROUND 1
+    print(f"Testing {len(indexes)} cameras concurrently (Round 1)...")
     working = []
-    for cam_index in indexes: 
-        print(cam_index)
-        cap = cv2.VideoCapture(cam_index, cv2.CAP_ANY)
-        if not cap.isOpened():
-            print("Cannot open camera")
-            continue
-        else:
-            working.append(cam_index)
-        cap.release()
-        cv2.destroyAllWindows()
+    lock = threading.Lock()
+    
+    with ThreadPoolExecutor(max_workers=min(8, len(indexes))) as executor:
+        futures = [executor.submit(test_single_camera, idx) for idx in indexes]
+        for future in as_completed(futures):
+            result = future.result()
+            if result is not None:
+                with lock:
+                    working.append(result)
+                    print(f"✓ Camera {result}")
+    
+    # ROUND 2 - kill + retest everything again
+    if working:
+        print("🔥 ROUND 2 - Double-check + cleanup...")
+        nuclear_zombie_killer()
+        
+        final_working = []
+        with ThreadPoolExecutor(max_workers=min(8, len(working))) as executor:
+            futures = [executor.submit(test_single_camera, idx) for idx in working]
+            for future in as_completed(futures):
+                result = future.result()
+                if result is not None:
+                    final_working.append(result)
+                    print(f"✓ Confirmed: {result}")
+        
+        working = final_working
+    else:
+        print("No cameras in round 1, skipping round 2")
+    
+    cv2.destroyAllWindows()
+    print(f"FINAL Working cameras: {working}")
     return working
 
 
