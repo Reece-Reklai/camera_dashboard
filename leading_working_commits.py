@@ -134,7 +134,10 @@ class CaptureWorker(QThread):
 
             # Try to set FPS hint (drivers may ignore)
             try:
-                cap.set(cv2.CAP_PROP_FPS, 0)
+                if self._target_fps and self._target_fps > 0:
+                    cap.set(cv2.CAP_PROP_FPS, float(self._target_fps))
+                else:
+                    cap.set(cv2.CAP_PROP_FPS, 0)
             except Exception:
                 pass
 
@@ -192,10 +195,22 @@ class CameraWidget(QtWidgets.QWidget):
     One widget per camera. Optimized frame handling:
     - The worker throttles frames (auto-detected fps)
     - Avoids expensive cv2.resize and avoids unnecessary copies
+    - UI render is throttled to `ui_fps` using the latest frame only
     """
     hold_threshold_ms = 400
 
-    def __init__(self, width, height, stream_link=0, aspect_ratio=False, parent=None, buffer_size=1, target_fps=None, request_capture_size=(640,480)):
+    def __init__(
+        self,
+        width,
+        height,
+        stream_link=0,
+        aspect_ratio=False,
+        parent=None,
+        buffer_size=1,
+        target_fps=None,
+        request_capture_size=(640,480),
+        ui_fps=15,
+    ):
         super().__init__(parent)
         logging.debug("Creating camera %s", stream_link)
 
@@ -246,6 +261,9 @@ class CameraWidget(QtWidgets.QWidget):
         self.frame_count = 0
         self.prev_time = time.time()
 
+        # Latest frame storage for render throttling
+        self._latest_frame = None
+
         # Worker: ask for a reasonable capture size to lower CPU
         cap_w, cap_h = request_capture_size if request_capture_size else (None, None)
         self.worker = CaptureWorker(
@@ -259,6 +277,13 @@ class CameraWidget(QtWidgets.QWidget):
         self.worker.frame_ready.connect(self.on_frame)
         self.worker.status_changed.connect(self.on_status_changed)
         self.worker.start()
+
+        # Render timer to throttle UI draw rate
+        self.ui_render_fps = max(1, int(ui_fps))
+        self.render_timer = QTimer(self)
+        self.render_timer.setInterval(int(1000 / self.ui_render_fps))
+        self.render_timer.timeout.connect(self._render_latest_frame)
+        self.render_timer.start()
 
         # UI timer prints FPS once per second
         self.ui_timer = QTimer(self)
@@ -500,25 +525,43 @@ class CameraWidget(QtWidgets.QWidget):
     @pyqtSlot(object)
     def on_frame(self, frame_bgr):
         """
-        Called on the main thread via signal. Expects a BGR numpy frame.
-        Optimization notes:
-        - Avoid cv2.resize: QLabel.scaledContents=True will scale the pixmap.
-        - Use QImage.Format_BGR888 to avoid BGR->RGB conversion.
+        Receives the newest frame and stores it.
+        Rendering is throttled by a timer in _render_latest_frame().
         """
         try:
             if frame_bgr is None:
                 return
-
-            h, w, ch = frame_bgr.shape
-            bytes_per_line = ch * w
-
-            img = QtGui.QImage(frame_bgr.data, w, h, bytes_per_line, QtGui.QImage.Format.Format_BGR888)
-            pix = QtGui.QPixmap.fromImage(img)
-            self.video_label.setPixmap(pix)
-
-            self.frame_count += 1
+            self._latest_frame = frame_bgr
         except Exception:
             logging.exception("on_frame")
+
+    def _render_latest_frame(self):
+        try:
+            frame_bgr = self._latest_frame
+            if frame_bgr is None:
+                return
+
+            # If the camera delivers grayscale, show it as-is
+            if frame_bgr.ndim == 2:
+                h, w = frame_bgr.shape
+                bytes_per_line = w
+                img = QtGui.QImage(
+                    frame_bgr.data, w, h, bytes_per_line,
+                    QtGui.QImage.Format.Format_Grayscale8
+                )
+            else:
+                h, w, ch = frame_bgr.shape
+                bytes_per_line = ch * w
+                img = QtGui.QImage(
+                    frame_bgr.data, w, h, bytes_per_line,
+                    QtGui.QImage.Format.Format_BGR888
+                )
+
+            pix = QtGui.QPixmap.fromImage(img)
+            self.video_label.setPixmap(pix)
+            self.frame_count += 1
+        except Exception:
+            logging.exception("render frame")
 
     @pyqtSlot(bool)
     def on_status_changed(self, online):
@@ -760,6 +803,21 @@ def safe_cleanup(widgets):
             pass
 
 
+def choose_profile(camera_count):
+    """
+    Adaptive performance profile based on active camera count.
+    Returns (capture_width, capture_height, capture_fps, ui_fps).
+    """
+    if camera_count <= 1:
+        return 1280, 720, 30, 30
+    if camera_count == 2:
+        return 960, 540, 20, 20
+    if camera_count == 3:
+        return 800, 450, 15, 15
+    # 4 or more
+    return 640, 480, 15, 15
+
+
 # === MAIN APPLICATION ===
 def main():
     logging.info("Starting camera grid app")
@@ -795,13 +853,22 @@ def main():
         widget_width = max(1, screen.width() // cols)
         widget_height = max(1, screen.height() // rows)
 
+        # Adaptive profile based on active camera count
+        cap_w, cap_h, cap_fps, ui_fps = choose_profile(len(working_cameras))
+        logging.info("Profile: %dx%d @ %d FPS (UI %d FPS)", cap_w, cap_h, cap_fps, ui_fps)
+
         # Create widgets (limit to 9)
         for cam_index in working_cameras[:9]:
-            # Request a sensible capture resolution that matches widget size but limited
-            req_w = min(widget_width, 1280)
-            req_h = min(widget_height, 720)
-            cw = CameraWidget(widget_width, widget_height, cam_index, parent=central_widget,
-                              buffer_size=1, target_fps=None, request_capture_size=(req_w, req_h))
+            cw = CameraWidget(
+                widget_width,
+                widget_height,
+                cam_index,
+                parent=central_widget,
+                buffer_size=1,
+                target_fps=cap_fps,
+                request_capture_size=(cap_w, cap_h),
+                ui_fps=ui_fps,
+            )
             camera_widgets.append(cw)
 
         for i, cw in enumerate(camera_widgets):
