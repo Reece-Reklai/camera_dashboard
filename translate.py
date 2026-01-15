@@ -377,10 +377,12 @@ def get_smart_grid(num_cameras):
 def find_working_cameras():
     """RPi-optimized camera detection."""
     working = []
-    test_indices = [0,1,2,3,4]
+    check_cam = []
+    for camera_info in enumerate_cameras():
+        check_cam.append(camera_info.index)
     
     print("=== SCANNING CAMERAS ===")
-    for i in test_indices:
+    for i in check_cam:
         try:
             cap = cv2.VideoCapture(i)
             if cap.isOpened():
