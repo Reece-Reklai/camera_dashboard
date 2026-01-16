@@ -171,30 +171,7 @@ When there are placeholders:
 
 ---
 
-## 8) Important Extension Points
-
-### Add a new layout strategy
-- Modify `get_smart_grid()`
-
-### Add custom camera settings
-- Extend `CaptureWorker._open_capture()`
-
-### Add overlays / OSD
-- Modify `_render_latest_frame()` (before creating pixmap)
-
----
-
-## 9) Code Reading Guide (Recommended Order)
-
-1. `main()` — how the app is assembled
-2. `CameraWidget` — UI + interaction
-3. `CaptureWorker` — threading + capture
-4. Camera discovery functions
-5. Dynamic FPS functions
-
----
-
-## 10) Contribution Tips
+## 8) Self Reminder
 
 - **Never block the UI thread** with I/O or camera calls.
 - Use Qt signals for thread-safe communication.
