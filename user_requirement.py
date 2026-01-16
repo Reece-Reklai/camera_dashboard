@@ -1,3 +1,19 @@
+# ============================================================
+# TABLE OF CONTENTS
+# ------------------------------------------------------------
+# 1. DEBUG PRINTS
+# 2. LOGGING
+# 3. DYNAMIC PERFORMANCE TUNING
+# 4. CAMERA RESCAN (HOT-PLUG SUPPORT)
+# 5. CAMERA CAPTURE WORKER
+# 6. FULLSCREEN OVERLAY
+# 7. CAMERA WIDGET
+# 8. GRID LAYOUT HELPERS
+# 9. SYSTEM / PROCESS HELPERS
+# 10. CAMERA DISCOVERY
+# 11. CLEANUP + PROFILE SELECTION
+# 12. MAIN ENTRYPOINT
+# ============================================================
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
@@ -106,7 +122,9 @@ def _is_system_stressed():
 # Runs on its own QThread to avoid blocking the UI thread.
 # ============================================================
 class CaptureWorker(QThread):
+    # Signal emitted when a new frame is ready for the UI thread.
     frame_ready = pyqtSignal(object)
+    # Signal emitted when camera connection status changes.
     status_changed = pyqtSignal(bool)
 
     def __init__(
@@ -129,7 +147,9 @@ class CaptureWorker(QThread):
         self._emit_interval = 1.0 / 30.0
         self.capture_width = capture_width
         self.capture_height = capture_height
+        # Buffer holds most recent frames, used to decouple capture from UI.
         self.buffer = deque(maxlen=maxlen)
+        # Lock protects changes to FPS/emit interval from other threads.
         self._fps_lock = threading.Lock()
 
     def run(self):
@@ -137,6 +157,7 @@ class CaptureWorker(QThread):
         logging.info("Camera %s thread started", self.stream_link)
         while self._running:
             try:
+                # Ensure capture is open; reconnect if it fails.
                 if self._cap is None or not self._cap.isOpened():
                     self._open_capture()
                     if not (self._cap and self._cap.isOpened()):
@@ -146,6 +167,7 @@ class CaptureWorker(QThread):
                     self._reconnect_backoff = 1.0
                     self.status_changed.emit(True)
 
+                # Grab & retrieve keeps latency low vs read().
                 grabbed = self._cap.grab()
                 if not grabbed:
                     self._close_capture()
@@ -161,6 +183,7 @@ class CaptureWorker(QThread):
                 now = time.time()
                 with self._fps_lock:
                     emit_interval = self._emit_interval
+                # Throttle emits to target FPS to avoid UI overload.
                 if now - self._last_emit >= emit_interval:
                     self.buffer.append(frame)
                     self.frame_ready.emit(frame)
@@ -188,21 +211,25 @@ class CaptureWorker(QThread):
                     pass
                 return
 
+            # Request MJPEG if available to reduce decode overhead.
             try:
                 cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
             except Exception:
                 pass
 
+            # Apply capture resolution when requested.
             if self.capture_width:
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(self.capture_width))
             if self.capture_height:
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(self.capture_height))
 
+            # Reduce internal buffering to keep frames current.
             try:
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             except Exception:
                 pass
 
+            # Request FPS; 0 may let camera choose.
             try:
                 if self._target_fps and self._target_fps > 0:
                     cap.set(cv2.CAP_PROP_FPS, float(self._target_fps))
@@ -310,6 +337,7 @@ class FullscreenOverlay(QtWidgets.QWidget):
 # One tile in the grid. Manages UI input and rendering.
 # ============================================================
 class CameraWidget(QtWidgets.QWidget):
+    # How long a press needs to be to enter "swap mode".
     hold_threshold_ms = 400
 
     def __init__(
@@ -332,6 +360,7 @@ class CameraWidget(QtWidgets.QWidget):
         super().__init__(parent)
         logging.debug("Creating camera %s", stream_link)
 
+        # Widget configuration: touch enabled, expands in grid, dark theme.
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
         self.setMouseTracking(True)
@@ -346,6 +375,7 @@ class CameraWidget(QtWidgets.QWidget):
         self.camera_stream_link = stream_link
         self.widget_id = f"cam{stream_link}_{id(self)}"
 
+        # State used for fullscreen toggle + drag/hold swap mode.
         self.is_fullscreen = False
         self.grid_position = None
         self._press_widget_id = None
@@ -380,6 +410,7 @@ class CameraWidget(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
+        # Settings tile uses a button instead of a video stream.
         if self.settings_mode:
             self.video_label.setText(self.placeholder_text or "SETTINGS")
             self.video_label.setStyleSheet("color: #ffffff; font-size: 20px;")
@@ -399,10 +430,12 @@ class CameraWidget(QtWidgets.QWidget):
         else:
             layout.addWidget(self.video_label)
 
+        # FPS counters for logging UI render performance.
         self.frame_count = 0
         self.prev_time = time.time()
         self._latest_frame = None
 
+        # Base FPS is the desired target; current FPS is adjusted dynamically.
         self.base_target_fps = target_fps
         self.current_target_fps = target_fps
 
@@ -426,7 +459,8 @@ class CameraWidget(QtWidgets.QWidget):
             self._latest_frame = None
             self._render_placeholder(self.placeholder_text or "DISCONNECTED")
 
-        # Timer to render latest frame at a stable UI FPS
+        # Timer to render latest frame at a stable UI FPS.
+        # This is intentionally decoupled from capture FPS.
         if not self.settings_mode:
             self.ui_render_fps = max(1, int(ui_fps))
             self.render_timer = QTimer(self)
@@ -728,11 +762,13 @@ class CameraWidget(QtWidgets.QWidget):
         try:
             if frame_bgr is None:
                 return
+            # Only store; UI thread renders on its timer.
             self._latest_frame = frame_bgr
         except Exception:
             logging.exception("on_frame")
 
     def _render_placeholder(self, text):
+        """Render placeholder text when no frame is available."""
         if self.settings_mode:
             return
         target_label = self._fs_overlay.label if (self.is_fullscreen and self._fs_overlay) else self.video_label
@@ -753,6 +789,7 @@ class CameraWidget(QtWidgets.QWidget):
                 self._render_placeholder(self.placeholder_text or "DISCONNECTED")
                 return
 
+            # Convert numpy frame to Qt image, handling grayscale or BGR.
             if frame_bgr.ndim == 2:
                 h, w = frame_bgr.shape
                 bytes_per_line = w
@@ -770,6 +807,7 @@ class CameraWidget(QtWidgets.QWidget):
 
             pix = QtGui.QPixmap.fromImage(img)
 
+            # Fullscreen scales to screen size; grid uses label size.
             if self.is_fullscreen and self._fs_overlay:
                 target_size = self._fs_overlay.size()
                 if target_size.width() > 0 and target_size.height() > 0:
@@ -1112,6 +1150,7 @@ def main():
     layout.setSpacing(10)
 
     def restart_app():
+        """Restart the entire process (used by settings tile)."""
         logging.info("Restart requested from settings.")
         safe_cleanup(camera_widgets)
         python = sys.executable
@@ -1234,6 +1273,7 @@ def main():
     # Background rescan to attach new cameras to empty slots
     if placeholder_slots:
         def rescan_and_attach():
+            """Scan for new cameras and attach them to placeholders."""
             if not placeholder_slots:
                 return
 
