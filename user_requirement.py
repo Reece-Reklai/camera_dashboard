@@ -55,14 +55,6 @@ RECOVER_HOLD_COUNT = 3      # consecutive checks before increasing fps
 RESCAN_INTERVAL_MS = 5000
 FAILED_CAMERA_COOLDOWN_SEC = 30.0
 
-# ============================================================
-# FIXED CAMERA PROFILE (ALL COUNTS)
-# ------------------------------------------------------------
-FIXED_CAPTURE_WIDTH = 800
-FIXED_CAPTURE_HEIGHT = 450
-FIXED_CAPTURE_FPS = 20
-FIXED_UI_FPS = 20
-
 def _read_cpu_load_ratio():
     """Read 1-minute load average normalized to CPU count."""
     try:
@@ -333,6 +325,8 @@ class CameraWidget(QtWidgets.QWidget):
         ui_fps=15,
         enable_capture=True,
         placeholder_text=None,
+        settings_mode=False,
+        on_restart=None,
     ):
         """Initialize tile UI, worker thread, and timers."""
         super().__init__(parent)
@@ -364,6 +358,7 @@ class CameraWidget(QtWidgets.QWidget):
 
         self.capture_enabled = bool(enable_capture)
         self.placeholder_text = placeholder_text
+        self.settings_mode = settings_mode
 
         # Visual styles for normal and swap-ready state
         self.normal_style = "border: 2px solid #555; background: black;"
@@ -371,7 +366,7 @@ class CameraWidget(QtWidgets.QWidget):
         self.setStyleSheet(self.normal_style)
         self.setObjectName(self.widget_id)
 
-        # Video display label
+        # Video display label or settings title
         self.video_label = QtWidgets.QLabel(self)
         self.video_label.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
                                        QtWidgets.QSizePolicy.Policy.Expanding)
@@ -384,7 +379,25 @@ class CameraWidget(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.video_label)
+
+        if self.settings_mode:
+            self.video_label.setText(self.placeholder_text or "SETTINGS")
+            self.video_label.setStyleSheet("color: #ffffff; font-size: 20px;")
+
+            restart_button = QtWidgets.QPushButton("Restart")
+            restart_button.setStyleSheet(
+                "QPushButton { padding: 10px 16px; font-size: 18px; }"
+            )
+            if on_restart:
+                restart_button.clicked.connect(on_restart)
+
+            layout.addStretch(1)
+            layout.addWidget(self.video_label)
+            layout.addSpacing(12)
+            layout.addWidget(restart_button, alignment=Qt.AlignmentFlag.AlignCenter)
+            layout.addStretch(1)
+        else:
+            layout.addWidget(self.video_label)
 
         self.frame_count = 0
         self.prev_time = time.time()
@@ -408,20 +421,24 @@ class CameraWidget(QtWidgets.QWidget):
             self.worker.frame_ready.connect(self.on_frame)
             self.worker.status_changed.connect(self.on_status_changed)
             self.worker.start()
-        else:
+        elif not self.settings_mode:
             # No capture: set placeholder immediately
             self._latest_frame = None
             self._render_placeholder(self.placeholder_text or "DISCONNECTED")
 
         # Timer to render latest frame at a stable UI FPS
-        self.ui_render_fps = max(1, int(ui_fps))
-        self.render_timer = QTimer(self)
-        self.render_timer.setInterval(int(1000 / self.ui_render_fps))
-        self.render_timer.timeout.connect(self._render_latest_frame)
-        self.render_timer.start()
+        if not self.settings_mode:
+            self.ui_render_fps = max(1, int(ui_fps))
+            self.render_timer = QTimer(self)
+            self.render_timer.setInterval(int(1000 / self.ui_render_fps))
+            self.render_timer.timeout.connect(self._render_latest_frame)
+            self.render_timer.start()
+        else:
+            self.ui_render_fps = 0
+            self.render_timer = None
 
         # Timer to print UI FPS diagnostics (only for real cameras)
-        if self.capture_enabled:
+        if self.capture_enabled and not self.settings_mode:
             self.ui_timer = QTimer(self)
             self.ui_timer.setInterval(1000)
             self.ui_timer.timeout.connect(self._print_fps)
@@ -694,7 +711,7 @@ class CameraWidget(QtWidgets.QWidget):
         self._fs_overlay.activateWindow()
         self.is_fullscreen = True
 
-        if self._latest_frame is None:
+        if self._latest_frame is None and not self.settings_mode:
             self._render_placeholder(self.placeholder_text or "DISCONNECTED")
 
     def exit_fullscreen(self):
@@ -716,6 +733,8 @@ class CameraWidget(QtWidgets.QWidget):
             logging.exception("on_frame")
 
     def _render_placeholder(self, text):
+        if self.settings_mode:
+            return
         target_label = self._fs_overlay.label if (self.is_fullscreen and self._fs_overlay) else self.video_label
         target_label.setPixmap(QtGui.QPixmap())
         target_label.setText(text)
@@ -726,6 +745,8 @@ class CameraWidget(QtWidgets.QWidget):
 
     def _render_latest_frame(self):
         """Convert latest frame to QPixmap and display it."""
+        if self.settings_mode:
+            return
         try:
             frame_bgr = self._latest_frame
             if frame_bgr is None:
@@ -1015,8 +1036,8 @@ def find_working_cameras():
     return working
 
 # ============================================================
-# CLEANUP
-# ------------------------------------------------============
+# CLEANUP + PROFILE SELECTION
+# ------------------------------------------------------------
 def safe_cleanup(widgets):
     """Gracefully stop all camera worker threads."""
     logging.info("Cleaning all cameras")
@@ -1025,6 +1046,16 @@ def safe_cleanup(widgets):
             w.cleanup()
         except Exception:
             pass
+
+def choose_profile(camera_count):
+    """Pick capture resolution and FPS based on camera count."""
+    if camera_count <= 1:
+        return 1280, 720, 30, 30
+    if camera_count == 2:
+        return 960, 540, 20, 20
+    if camera_count == 3:
+        return 800, 450, 15, 15
+    return 640, 480, 15, 15
 
 # ============================================================
 # MAIN ENTRYPOINT
@@ -1080,6 +1111,12 @@ def main():
     layout.setContentsMargins(10, 10, 10, 10)
     layout.setSpacing(10)
 
+    def restart_app():
+        logging.info("Restart requested from settings.")
+        safe_cleanup(camera_widgets)
+        python = sys.executable
+        os.execv(python, [python] + sys.argv)
+
     # Settings tile (always present, top-left)
     settings_tile = CameraWidget(
         width=1,
@@ -1092,14 +1129,14 @@ def main():
         ui_fps=5,
         enable_capture=False,
         placeholder_text="SETTINGS",
+        settings_mode=True,
+        on_restart=restart_app,
     )
     all_widgets.append(settings_tile)
 
-    cap_w = FIXED_CAPTURE_WIDTH
-    cap_h = FIXED_CAPTURE_HEIGHT
-    cap_fps = FIXED_CAPTURE_FPS
-    ui_fps = FIXED_UI_FPS
-    logging.info("Fixed profile: %dx%d @ %d FPS (UI %d FPS)", cap_w, cap_h, cap_fps, ui_fps)
+    active_camera_count = max(1, min(len(working_cameras), CAMERA_SLOT_COUNT))
+    cap_w, cap_h, cap_fps, ui_fps = choose_profile(active_camera_count)
+    logging.info("Profile: %dx%d @ %d FPS (UI %d FPS)", cap_w, cap_h, cap_fps, ui_fps)
 
     # Exactly 3 camera slots at all times
     for slot_idx in range(CAMERA_SLOT_COUNT):
