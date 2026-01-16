@@ -1,6 +1,6 @@
 # Camera Grid App — Deep Dive Guide
 
-This README is a **conceptual map** of the codebase. It focuses on the complex parts: **threading, frame flow, UI rendering, hot-plug, dynamic FPS**, and more. Use it to understand how to extend or maintain the project.
+This README is a **conceptual map** of the codebase. It focuses on the complex parts: **threading, frame flow, UI rendering, hot-plug, dynamic FPS**, and more.
 
 ```mermaid
 flowchart TD
