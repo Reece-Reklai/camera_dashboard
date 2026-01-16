@@ -97,21 +97,6 @@ sudo -E python3 main.py
 
 ---
 
-## Dependencies Summary
-
-Python packages (non‑stdlib):
-- PyQt6
-- opencv-python (or `python3-opencv`)
-
-System libraries (Qt runtime):
-- libgl1, libegl1
-- libxkbcommon0, libxkbcommon-x11-0
-- libxcb-cursor0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1
-- libxcb-render-util0, libxcb-xinerama0, libxcb-xfixes0
-- libqt6gui6, libqt6widgets6
-
----
-
 ## About using `sudo`
 
 Only use `sudo` for apt install.  
@@ -127,9 +112,7 @@ Using `sudo` for those steps:
 ## Notes
 
 - USB cameras should be visible as `/dev/video*`
-- If no cameras are found, the app will show "NO CAMERAS FOUND"
-- Exit with Ctrl+Q or Ctrl+C in terminal
+- If no cameras are found, the app will show "Disconnected"
+- Exit with Ctrl+Q or Ctrl+C in terminal or Q inside application window
 
 ---
-
-If you want autostart or systemd support later, I can add that too.
