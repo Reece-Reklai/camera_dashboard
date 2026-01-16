@@ -2,7 +2,45 @@
 
 This README is a **conceptual map** of the codebase. It focuses on the complex parts: **threading, frame flow, UI rendering, hot-plug, dynamic FPS**, and more. Use it to understand how to extend or maintain the project.
 
----
+```mermaid
+flowchart TD
+    A[App Start] --> B[Create Qt App + Main Window]
+    B --> C[Find Working Cameras]
+    C --> D[Build Grid Layout<br/>Settings Tile + Camera/Placeholder Tiles]
+
+    %% Worker threads + frame flow
+    D --> E[For Each Camera Tile:<br/>Start CaptureWorker QThread]
+    E --> F[CaptureWorker opens camera device]
+    F --> G[CaptureWorker grab() + retrieve() loop]
+    G --> H[Frame captured (BGR)]
+    H --> I[Emit signal: frame_ready(frame)]
+    I --> J[CameraWidget.on_frame stores _latest_frame]
+
+    %% UI rendering flow
+    D --> K[UI Render Timer (15 FPS typical)]
+    K --> L[CameraWidget._render_latest_frame()]
+    L --> M{Is there a frame?}
+    M -- Yes --> N[Convert to QImage + QPixmap]
+    N --> O[Show in QLabel (grid or fullscreen overlay)]
+    M -- No --> P[Show placeholder text]
+
+    %% User input + fullscreen/swap
+    O --> Q[User Tap/Click]
+    Q --> R{Short or Long press?}
+    R -- Short --> S[Toggle Fullscreen Overlay]
+    R -- Long --> T[Swap Mode: select tile]
+    T --> U[Second Tile Clicked -> Swap Positions]
+
+    %% Performance + hotplug
+    B --> V[Dynamic FPS Monitor Timer]
+    V --> W{CPU load/temp high?}
+    W -- Yes --> X[Reduce Capture FPS]
+    W -- No --> Y[Recover FPS toward base]
+
+    B --> Z[Rescan Timer]
+    Z --> AA[Check /dev/video*]
+    AA --> AB[Attach new camera to empty slot]
+```
 
 ## 1) High-level Architecture
 
