@@ -40,17 +40,20 @@ source .venv/bin/activate
 
 ---
 
-## 4) Install Python packages
+## 4) Install Python packages via pip
 
 ```bash
 pip install --upgrade pip
 pip install PyQt6 opencv-python
+pip install pyudev
 ```
 
-> If `opencv-python` fails to install on your Pi, use the system package instead:
+## If `pyqt6 / opencv-python / pyudev` fails to install on your Pi, use the system package instead:
 >
 > ```bash
 > sudo apt install -y python3-opencv
+> sudo apt install python3-pyqt6
+> sudo apt-get install -y python3-pyudev
 > ```
 
 ---
