@@ -462,11 +462,12 @@ class CameraWidget(QtWidgets.QWidget):
         # Timer to render latest frame at a stable UI FPS.
         # This is intentionally decoupled from capture FPS.
         if not self.settings_mode:
-            self.ui_render_fps = max(1, int(ui_fps))
+            self.ui_render_fps = max(10, min(30, int(ui_fps)))  # Clamp 10-30 FPS
             self.render_timer = QTimer(self)
-            self.render_timer.setInterval(int(1000 / self.ui_render_fps))
+            self.render_timer.setInterval(round(1000 / self.ui_render_fps))
             self.render_timer.timeout.connect(self._render_latest_frame)
             self.render_timer.start()
+
         else:
             self.ui_render_fps = 0
             self.render_timer = None
@@ -492,7 +493,7 @@ class CameraWidget(QtWidgets.QWidget):
 
     def _apply_ui_fps(self, ui_fps):
         """Update UI render timer to match camera UI FPS."""
-        self.ui_render_fps = max(1, int(ui_fps))
+        self.ui_render_fps = min(30, max(15, int(ui_fps)))  # Clamp between 15-30
         if self.render_timer:
             self.render_timer.setInterval(int(1000 / self.ui_render_fps))
 
@@ -1087,13 +1088,7 @@ def safe_cleanup(widgets):
 
 def choose_profile(camera_count):
     """Pick capture resolution and FPS based on camera count."""
-    if camera_count <= 1:
-        return 1280, 720, 30, 30
-    if camera_count == 2:
-        return 960, 540, 20, 20
-    if camera_count == 3:
-        return 800, 450, 15, 15
-    return 640, 480, 15, 15
+    return 640, 480, 20, 30
 
 # ============================================================
 # MAIN ENTRYPOINT
