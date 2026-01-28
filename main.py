@@ -59,9 +59,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 # ============================================================
 DYNAMIC_FPS_ENABLED = True
 PERF_CHECK_INTERVAL_MS = 2000
-MIN_DYNAMIC_FPS = 10
+MIN_DYNAMIC_FPS = 5
 CPU_LOAD_THRESHOLD = 0.85   # 85% avg load
-CPU_TEMP_THRESHOLD_C = 75.0 # Celsius
+CPU_TEMP_THRESHOLD_C = 70.0 # Celsius
 STRESS_HOLD_COUNT = 2       # consecutive checks before reducing fps
 RECOVER_HOLD_COUNT = 3      # consecutive checks before increasing fps
 
@@ -814,7 +814,7 @@ class CameraWidget(QtWidgets.QWidget):
                     pix = pix.scaled(
                         target_size,
                         Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation
+                        Qt.TransformationMode.FastTransformation
                     )
                 self._fs_overlay.label.setPixmap(pix)
                 self._fs_overlay.label.setText("")
@@ -1087,13 +1087,7 @@ def safe_cleanup(widgets):
 
 def choose_profile(camera_count):
     """Pick capture resolution and FPS based on camera count."""
-    if camera_count <= 1:
-        return 1280, 720, 30, 30
-    if camera_count == 2:
-        return 960, 540, 20, 20
-    if camera_count == 3:
-        return 800, 450, 15, 15
-    return 640, 480, 15, 15
+    return 640, 480, 20, 20
 
 # ============================================================
 # MAIN ENTRYPOINT
