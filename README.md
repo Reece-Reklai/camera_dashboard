@@ -87,6 +87,13 @@ If the group is `video`, you can run the app normally.
 python3 main.py
 ```
 
+### Performance notes (blind‑spot / moving vehicle)
+
+- The app prefers Picamera2 on Raspberry Pi when available.
+- UI FPS is intentionally lower than capture FPS to keep latency stable.
+
+If you want to disable Picamera2, set `PICAMERA2_ENABLED = False` in `main.py`.
+
 ---
 
 ## If you must run as sudo (not recommended)
