@@ -9,8 +9,8 @@ A multi-camera monitoring system optimized for Raspberry Pi, designed for blind-
 ## Quick Start
 
 ```bash
-# Clone and install
-git clone <repository-url>
+# Clone and install (replace with your repository URL)
+git clone https://github.com/your-username/camera_dashboard.git
 cd camera_dashboard
 chmod +x install.sh
 ./install.sh
@@ -19,6 +19,8 @@ chmod +x install.sh
 source .venv/bin/activate
 python3 main.py
 ```
+
+> **Note**: Replace the clone URL with your actual repository URL, or download the source directly.
 
 ---
 
@@ -39,7 +41,7 @@ python3 main.py
 - **GStreamer Pipeline**: Hardware-accelerated MJPEG decoding (with V4L2 fallback)
 - **Dynamic FPS Adjustment**: Automatically reduces frame rate under CPU/thermal stress
 - **Threaded Architecture**: Separate capture threads ensure smooth UI performance
-- **Efficient Rendering**: 12 FPS UI refresh rate balances smoothness and CPU usage
+- **Efficient Rendering**: 15 FPS UI refresh rate balances smoothness and CPU usage
 
 ### System Integration
 - **Systemd Service**: Auto-start on boot with watchdog monitoring
@@ -185,7 +187,7 @@ stdout = true
 dynamic_fps = true                    # Auto-adjust FPS under stress
 perf_check_interval_ms = 2000         # How often to check system load
 min_dynamic_fps = 5                   # Minimum capture FPS
-min_dynamic_ui_fps = 8                # Minimum UI render FPS
+min_dynamic_ui_fps = 12               # Minimum UI render FPS
 cpu_load_threshold = 0.75             # 75% CPU triggers FPS reduction
 cpu_temp_threshold_c = 70.0           # 70°C triggers FPS reduction
 
@@ -200,7 +202,7 @@ use_gstreamer = true                  # Use GStreamer for capture (faster)
 capture_width = 640
 capture_height = 480
 capture_fps = 20                      # Camera capture rate
-ui_fps = 12                           # UI refresh rate (saves CPU)
+ui_fps = 15                           # UI refresh rate
 
 [health]
 log_interval_sec = 30                 # Health log frequency
@@ -254,19 +256,19 @@ sudo systemctl disable camera-dashboard
 
 | Cameras | Resolution | Capture FPS | UI FPS | CPU Usage | Memory |
 |---------|------------|-------------|--------|-----------|--------|
-| 1 | 640x480 | 20 | 12 | ~8% | ~150MB |
-| 2 | 640x480 | 20 | 12 | ~12% | ~180MB |
-| 3 | 640x480 | 20 | 12 | ~15% | ~200MB |
+| 1 | 640x480 | 20 | 15 | ~15% | ~150MB |
+| 2 | 640x480 | 20 | 15 | ~25% | ~180MB |
+| 3 | 640x480 | 20 | 15 | ~35% | ~200MB |
 
 ### Optimizations Applied
 - **GStreamer Pipeline**: More efficient MJPEG decoding than raw V4L2
-- **Reduced UI FPS**: 12 FPS vs 15 FPS saves ~20% CPU with no visible difference
+- **Render Overhead Compensation**: Timer adjusted to hit target FPS accurately
 - **Longer Rescan Interval**: 15s vs 5s reduces background CPU usage
 - **Frame Buffer Reuse**: Pre-allocated buffers avoid memory allocations
 - **BGR888 Direct Rendering**: No color conversion needed for Qt display
 
 ### Dynamic FPS Behavior
-1. **Normal**: Maintains target FPS (20 capture, 12 UI)
+1. **Normal**: Maintains target FPS (20 capture, 15 UI)
 2. **High CPU (>75%)**: Gradually reduces FPS
 3. **High Temp (>70°C)**: Immediately reduces FPS
 4. **Recovery**: Gradually restores FPS when system stabilizes
@@ -313,7 +315,7 @@ DEBUG_PRINTS=true python3 main.py
 ### High CPU Usage
 
 1. Reduce `capture_fps` in config.ini (e.g., 15 instead of 20)
-2. Reduce `ui_fps` (e.g., 10 instead of 12)
+2. Reduce `ui_fps` (e.g., 12 instead of 15)
 3. Enable `dynamic_fps = true`
 4. Check if GStreamer is active (look for "GStreamer" in logs)
 
@@ -351,7 +353,7 @@ DEBUG_PRINTS=true python3 main.py
 ### Data Flow
 1. `CaptureWorker` grabs frames via GStreamer or V4L2
 2. Frames emitted to main thread via Qt signals
-3. UI renders at fixed interval (12 FPS) using latest frame
+3. UI renders at fixed interval (15 FPS) using latest frame
 4. Performance monitor adjusts FPS based on system load
 
 ---

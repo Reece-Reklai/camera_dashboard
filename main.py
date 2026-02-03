@@ -43,6 +43,7 @@ import numpy as np
 # ============================================================
 # DEBUG_PRINTS = True
 DEBUG_PRINTS = False
+# UI_FPS_LOGGING = True  # Enable for FPS diagnostics
 UI_FPS_LOGGING = False
 
 
@@ -104,10 +105,15 @@ KILL_DEVICE_HOLDERS = True
 PROFILE_CAPTURE_WIDTH = 640
 PROFILE_CAPTURE_HEIGHT = 480
 PROFILE_CAPTURE_FPS = 20
-PROFILE_UI_FPS = 12  # Reduced from 15; 12 FPS is visually smooth, saves CPU
+PROFILE_UI_FPS = 15  # Target UI refresh rate (capture runs at 20 FPS)
 
 # GStreamer pipeline support (more efficient on Pi)
 USE_GSTREAMER = True  # Try GStreamer first, fallback to V4L2
+
+# Render overhead compensation (ms) - subtract from timer interval to hit target FPS
+# Qt timer fires, then render takes ~2-3ms, so actual cycle = interval + render_time
+# Example: 15 FPS (66.67ms cycle) → set interval to 66.67 - 3 = 63.67ms
+RENDER_OVERHEAD_MS = 3
 
 
 def _as_bool(value, default):
@@ -868,10 +874,12 @@ class CameraWidget(QtWidgets.QWidget):
             self._render_placeholder(self.placeholder_text or "DISCONNECTED")
 
         # Timer to render latest frame at a stable UI FPS.
+        # Compensate for render overhead to hit actual target FPS.
         if not self.settings_mode:
             self.ui_render_fps = max(1, int(ui_fps))
+            interval = max(1, int(1000 / self.ui_render_fps) - RENDER_OVERHEAD_MS)
             self.render_timer = QTimer(self)
-            self.render_timer.setInterval(int(1000 / self.ui_render_fps))
+            self.render_timer.setInterval(interval)
             self.render_timer.timeout.connect(self._render_latest_frame)
             self.render_timer.start()
         else:
@@ -910,10 +918,14 @@ class CameraWidget(QtWidgets.QWidget):
             self._fs_overlay = FullscreenOverlay(self.exit_fullscreen)
 
     def _apply_ui_fps(self, ui_fps):
-        """Update UI render timer to match camera UI FPS."""
+        """Update UI render timer to match camera UI FPS.
+        
+        Compensates for render overhead to achieve actual target FPS.
+        """
         self.ui_render_fps = max(1, int(ui_fps))
         if self.render_timer:
-            self.render_timer.setInterval(int(1000 / self.ui_render_fps))
+            interval = max(1, int(1000 / self.ui_render_fps) - RENDER_OVERHEAD_MS)
+            self.render_timer.setInterval(interval)
 
     def attach_camera(self, stream_link, target_fps, request_capture_size, ui_fps=None):
         """Attach a camera to an existing placeholder slot."""
