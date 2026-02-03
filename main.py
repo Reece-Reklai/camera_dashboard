@@ -14,27 +14,27 @@
 # 11. CLEANUP + PROFILE SELECTION
 # 12. MAIN ENTRYPOINT
 # ============================================================
-import configparser
-import logging
-from logging.handlers import RotatingFileHandler
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
-import glob
-import subprocess
-import socket
-from PyQt6 import QtCore, QtGui, QtWidgets
-from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QThread, QTimer
-import sys
-import cv2
-import time
-import traceback
-from collections import deque
 import atexit
-import signal
-import platform
+import configparser
+import glob
+import logging
 import os
+import platform
 import re
+import signal
+import socket
+import subprocess
+import sys
+import threading
+import time
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from logging.handlers import RotatingFileHandler
+
+import cv2
 import numpy as np
+from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal, pyqtSlot
 
 # ============================================================
 # DEBUG PRINTS (disabled by default)
@@ -605,7 +605,7 @@ class CaptureWorker(QThread):
                 try:
                     w = int(self.capture_width) if self.capture_width else 640
                     h = int(self.capture_height) if self.capture_height else 480
-                    fps = int(self._target_fps) if self._target_fps else 30
+                    # fps = int(self._target_fps) if self._target_fps else 30
                     # GStreamer pipeline: v4l2src -> MJPEG decode -> BGR output
                     # Using simpler pipeline without strict format to improve compatibility
                     pipeline = (
