@@ -370,6 +370,7 @@ class CameraWidget(QtWidgets.QWidget):
         placeholder_text=None,
         settings_mode=False,
         on_restart=None,
+        on_night_mode_toggle=None,
     ):
         """Initialize tile UI, worker thread, and timers."""
         super().__init__(parent)
@@ -404,6 +405,7 @@ class CameraWidget(QtWidgets.QWidget):
         self.capture_enabled = bool(enable_capture)
         self.placeholder_text = placeholder_text
         self.settings_mode = settings_mode
+        self.night_mode_enabled = False
 
         # Visual styles for normal and swap-ready state
         self.normal_style = "border: 2px solid #555; background: black;"
@@ -438,6 +440,12 @@ class CameraWidget(QtWidgets.QWidget):
             if on_restart:
                 restart_button.clicked.connect(on_restart)
 
+            night_mode_button = QtWidgets.QPushButton("Nightmode: Off")
+            night_mode_button.setStyleSheet(button_style)
+            if on_night_mode_toggle:
+                night_mode_button.clicked.connect(on_night_mode_toggle)
+            self.night_mode_button = night_mode_button
+
             exit_button = QtWidgets.QPushButton("Exit")
             exit_button.setStyleSheet(button_style)
             exit_button.clicked.connect(self._exit_app)
@@ -447,6 +455,9 @@ class CameraWidget(QtWidgets.QWidget):
             layout.addSpacing(12)
             layout.addWidget(
                 restart_button, alignment=Qt.AlignmentFlag.AlignCenter)
+            layout.addSpacing(8)
+            layout.addWidget(
+                night_mode_button, alignment=Qt.AlignmentFlag.AlignCenter)
             layout.addSpacing(8)
             layout.addWidget(
                 exit_button, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -829,6 +840,17 @@ class CameraWidget(QtWidgets.QWidget):
                     self.placeholder_text or "DISCONNECTED")
                 return
 
+            if self.night_mode_enabled:
+                try:
+                    if frame_bgr.ndim == 2:
+                        frame_bgr = cv2.equalizeHist(frame_bgr)
+                    else:
+                        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+                        gray = cv2.equalizeHist(gray)
+                        frame_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+                except Exception:
+                    pass
+
             # Convert numpy frame to Qt image, handling grayscale or BGR.
             if frame_bgr.ndim == 2:
                 h, w = frame_bgr.shape
@@ -908,6 +930,16 @@ class CameraWidget(QtWidgets.QWidget):
                 self.worker.set_target_fps(fps)
         except Exception:
             logging.exception("set_dynamic_fps")
+
+    def set_night_mode(self, enabled):
+        """Enable or disable night mode rendering."""
+        self.night_mode_enabled = bool(enabled)
+
+    def set_night_mode_button_label(self, enabled):
+        """Update settings tile button label for night mode."""
+        if self.settings_mode and hasattr(self, "night_mode_button"):
+            label = "Nightmode: On" if enabled else "Nightmode: Off"
+            self.night_mode_button.setText(label)
 
     def cleanup(self):
         """Stop the capture worker thread cleanly."""
@@ -1218,6 +1250,17 @@ def main():
         python = sys.executable
         os.execv(python, [python] + sys.argv)
 
+    night_mode_state = {"enabled": False}
+
+    def toggle_night_mode():
+        """Toggle night mode for all camera widgets."""
+        night_mode_state["enabled"] = not night_mode_state["enabled"]
+        enabled = night_mode_state["enabled"]
+        for w in all_widgets:
+            if hasattr(w, "set_night_mode"):
+                w.set_night_mode(enabled)
+        settings_tile.set_night_mode_button_label(enabled)
+
     # Settings tile (always present, top-left)
     settings_tile = CameraWidget(
         width=1,
@@ -1232,6 +1275,7 @@ def main():
         placeholder_text="SETTINGS",
         settings_mode=True,
         on_restart=restart_app,
+        on_night_mode_toggle=toggle_night_mode,
     )
     all_widgets.append(settings_tile)
 
@@ -1255,6 +1299,7 @@ def main():
                 ui_fps=ui_fps,
                 enable_capture=True,
             )
+            cw.set_night_mode(night_mode_state["enabled"])
             camera_widgets.append(cw)
         else:
             cw = CameraWidget(
@@ -1269,6 +1314,7 @@ def main():
                 enable_capture=False,
                 placeholder_text="DISCONNECTED",
             )
+            cw.set_night_mode(night_mode_state["enabled"])
             placeholder_slots.append(cw)
         all_widgets.append(cw)
 
@@ -1369,6 +1415,7 @@ def main():
                     slot = placeholder_slots.pop(0)
                     slot.attach_camera(
                         ok, cap_fps, (cap_w, cap_h), ui_fps=ui_fps)
+                    slot.set_night_mode(night_mode_state["enabled"])
                     camera_widgets.append(slot)
                     active_indexes.add(ok)
                     failed_indexes.pop(ok, None)
