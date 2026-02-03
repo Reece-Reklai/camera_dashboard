@@ -843,11 +843,11 @@ class CameraWidget(QtWidgets.QWidget):
             if self.night_mode_enabled:
                 try:
                     if frame_bgr.ndim == 2:
-                        frame_bgr = cv2.equalizeHist(frame_bgr)
+                        gray = cv2.equalizeHist(frame_bgr)
                     else:
                         gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
                         gray = cv2.equalizeHist(gray)
-                        frame_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+                    frame_bgr = cv2.merge((gray * 0, gray * 0, gray))
                 except Exception:
                     pass
 
