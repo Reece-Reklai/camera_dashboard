@@ -87,12 +87,6 @@ If the group is `video`, you can run the app normally.
 python3 main.py
 ```
 
-### Performance notes (blind‑spot / moving vehicle)
-
-- The app prefers Picamera2 on Raspberry Pi when available.
-- UI FPS is intentionally lower than capture FPS to keep latency stable.
-
-If you want to disable Picamera2, set `PICAMERA2_ENABLED = False` in `main.py`.
 
 ---
 
@@ -120,8 +114,20 @@ Using `sudo` for those steps:
 
 ## Notes
 
+- UI FPS is intentionally lower than capture FPS to keep latency stable.
+- The app prefers MJPEG when the camera supports it.
 - USB cameras should be visible as `/dev/video*`
 - If no cameras are found, the app will show "Disconnected"
 - Exit with Ctrl+Q or Ctrl+C in terminal or Q inside application window
+
+---
+
+## Quick Overview
+
+- `choose_profile()` controls capture resolution + FPS.
+- `CPU_LOAD_THRESHOLD`, `CPU_TEMP_THRESHOLD_C`, `MIN_DYNAMIC_FPS` tune stress FPS.
+- `MIN_DYNAMIC_UI_FPS`, `UI_FPS_STEP` tune UI FPS throttling.
+- `STALE_FRAME_TIMEOUT_SEC` + restart window settings control recovery.
+- `UI_FPS_LOGGING` and `DEBUG_PRINTS` toggle logs.
 
 ---
