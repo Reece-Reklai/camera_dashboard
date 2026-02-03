@@ -47,7 +47,6 @@ DEBUG_PRINTS = False
 UI_FPS_LOGGING = False
 
 
-
 def dprint(*args, **kwargs):
     """Lightweight debug print wrapper."""
     if DEBUG_PRINTS:
@@ -78,10 +77,10 @@ PERF_CHECK_INTERVAL_MS = 2000
 MIN_DYNAMIC_FPS = 5
 MIN_DYNAMIC_UI_FPS = 10
 UI_FPS_STEP = 2
-CPU_LOAD_THRESHOLD = 0.75   # 75% avg load
+CPU_LOAD_THRESHOLD = 0.75  # 75% avg load
 CPU_TEMP_THRESHOLD_C = 70.0  # Celsius
-STRESS_HOLD_COUNT = 2       # consecutive checks before reducing fps
-RECOVER_HOLD_COUNT = 3      # consecutive checks before increasing fps
+STRESS_HOLD_COUNT = 2  # consecutive checks before reducing fps
+RECOVER_HOLD_COUNT = 3  # consecutive checks before increasing fps
 
 # Stale frame detection + bounded auto-restart policy.
 STALE_FRAME_TIMEOUT_SEC = 1.5
@@ -199,86 +198,173 @@ def apply_config(parser):
     if parser.has_section("logging"):
         LOG_LEVEL = parser.get("logging", "level", fallback=LOG_LEVEL)
         LOG_FILE = parser.get("logging", "file", fallback=LOG_FILE)
-        LOG_MAX_BYTES = _as_int(parser.get("logging", "max_bytes", fallback=LOG_MAX_BYTES),
-                               LOG_MAX_BYTES, min_value=1024)
-        LOG_BACKUP_COUNT = _as_int(parser.get("logging", "backup_count", fallback=LOG_BACKUP_COUNT),
-                                   LOG_BACKUP_COUNT, min_value=1)
-        LOG_TO_STDOUT = _as_bool(parser.get("logging", "stdout", fallback=LOG_TO_STDOUT), LOG_TO_STDOUT)
+        LOG_MAX_BYTES = _as_int(
+            parser.get("logging", "max_bytes", fallback=LOG_MAX_BYTES),
+            LOG_MAX_BYTES,
+            min_value=1024,
+        )
+        LOG_BACKUP_COUNT = _as_int(
+            parser.get("logging", "backup_count", fallback=LOG_BACKUP_COUNT),
+            LOG_BACKUP_COUNT,
+            min_value=1,
+        )
+        LOG_TO_STDOUT = _as_bool(
+            parser.get("logging", "stdout", fallback=LOG_TO_STDOUT), LOG_TO_STDOUT
+        )
 
     if parser.has_section("performance"):
-        DYNAMIC_FPS_ENABLED = _as_bool(parser.get("performance", "dynamic_fps", fallback=DYNAMIC_FPS_ENABLED),
-                                       DYNAMIC_FPS_ENABLED)
+        DYNAMIC_FPS_ENABLED = _as_bool(
+            parser.get("performance", "dynamic_fps", fallback=DYNAMIC_FPS_ENABLED),
+            DYNAMIC_FPS_ENABLED,
+        )
         PERF_CHECK_INTERVAL_MS = _as_int(
-            parser.get("performance", "perf_check_interval_ms", fallback=PERF_CHECK_INTERVAL_MS),
-            PERF_CHECK_INTERVAL_MS, min_value=250)
-        MIN_DYNAMIC_FPS = _as_int(parser.get("performance", "min_dynamic_fps", fallback=MIN_DYNAMIC_FPS),
-                                  MIN_DYNAMIC_FPS, min_value=1)
-        MIN_DYNAMIC_UI_FPS = _as_int(parser.get("performance", "min_dynamic_ui_fps", fallback=MIN_DYNAMIC_UI_FPS),
-                                     MIN_DYNAMIC_UI_FPS, min_value=1)
-        UI_FPS_STEP = _as_int(parser.get("performance", "ui_fps_step", fallback=UI_FPS_STEP),
-                              UI_FPS_STEP, min_value=1)
+            parser.get(
+                "performance", "perf_check_interval_ms", fallback=PERF_CHECK_INTERVAL_MS
+            ),
+            PERF_CHECK_INTERVAL_MS,
+            min_value=250,
+        )
+        MIN_DYNAMIC_FPS = _as_int(
+            parser.get("performance", "min_dynamic_fps", fallback=MIN_DYNAMIC_FPS),
+            MIN_DYNAMIC_FPS,
+            min_value=1,
+        )
+        MIN_DYNAMIC_UI_FPS = _as_int(
+            parser.get(
+                "performance", "min_dynamic_ui_fps", fallback=MIN_DYNAMIC_UI_FPS
+            ),
+            MIN_DYNAMIC_UI_FPS,
+            min_value=1,
+        )
+        UI_FPS_STEP = _as_int(
+            parser.get("performance", "ui_fps_step", fallback=UI_FPS_STEP),
+            UI_FPS_STEP,
+            min_value=1,
+        )
         CPU_LOAD_THRESHOLD = _as_float(
-            parser.get("performance", "cpu_load_threshold", fallback=CPU_LOAD_THRESHOLD),
-            CPU_LOAD_THRESHOLD, min_value=0.1, max_value=1.0)
+            parser.get(
+                "performance", "cpu_load_threshold", fallback=CPU_LOAD_THRESHOLD
+            ),
+            CPU_LOAD_THRESHOLD,
+            min_value=0.1,
+            max_value=1.0,
+        )
         CPU_TEMP_THRESHOLD_C = _as_float(
-            parser.get("performance", "cpu_temp_threshold_c", fallback=CPU_TEMP_THRESHOLD_C),
-            CPU_TEMP_THRESHOLD_C, min_value=30.0, max_value=100.0)
+            parser.get(
+                "performance", "cpu_temp_threshold_c", fallback=CPU_TEMP_THRESHOLD_C
+            ),
+            CPU_TEMP_THRESHOLD_C,
+            min_value=30.0,
+            max_value=100.0,
+        )
         STRESS_HOLD_COUNT = _as_int(
             parser.get("performance", "stress_hold_count", fallback=STRESS_HOLD_COUNT),
-            STRESS_HOLD_COUNT, min_value=1)
+            STRESS_HOLD_COUNT,
+            min_value=1,
+        )
         RECOVER_HOLD_COUNT = _as_int(
-            parser.get("performance", "recover_hold_count", fallback=RECOVER_HOLD_COUNT),
-            RECOVER_HOLD_COUNT, min_value=1)
+            parser.get(
+                "performance", "recover_hold_count", fallback=RECOVER_HOLD_COUNT
+            ),
+            RECOVER_HOLD_COUNT,
+            min_value=1,
+        )
         STALE_FRAME_TIMEOUT_SEC = _as_float(
-            parser.get("performance", "stale_frame_timeout_sec", fallback=STALE_FRAME_TIMEOUT_SEC),
-            STALE_FRAME_TIMEOUT_SEC, min_value=0.5)
+            parser.get(
+                "performance",
+                "stale_frame_timeout_sec",
+                fallback=STALE_FRAME_TIMEOUT_SEC,
+            ),
+            STALE_FRAME_TIMEOUT_SEC,
+            min_value=0.5,
+        )
         RESTART_COOLDOWN_SEC = _as_float(
-            parser.get("performance", "restart_cooldown_sec", fallback=RESTART_COOLDOWN_SEC),
-            RESTART_COOLDOWN_SEC, min_value=1.0)
+            parser.get(
+                "performance", "restart_cooldown_sec", fallback=RESTART_COOLDOWN_SEC
+            ),
+            RESTART_COOLDOWN_SEC,
+            min_value=1.0,
+        )
         MAX_RESTARTS_PER_WINDOW = _as_int(
-            parser.get("performance", "max_restarts_per_window", fallback=MAX_RESTARTS_PER_WINDOW),
-            MAX_RESTARTS_PER_WINDOW, min_value=1)
+            parser.get(
+                "performance",
+                "max_restarts_per_window",
+                fallback=MAX_RESTARTS_PER_WINDOW,
+            ),
+            MAX_RESTARTS_PER_WINDOW,
+            min_value=1,
+        )
         RESTART_WINDOW_SEC = _as_float(
-            parser.get("performance", "restart_window_sec", fallback=RESTART_WINDOW_SEC),
-            RESTART_WINDOW_SEC, min_value=5.0)
+            parser.get(
+                "performance", "restart_window_sec", fallback=RESTART_WINDOW_SEC
+            ),
+            RESTART_WINDOW_SEC,
+            min_value=5.0,
+        )
 
     global USE_GSTREAMER
 
     if parser.has_section("camera"):
         RESCAN_INTERVAL_MS = _as_int(
             parser.get("camera", "rescan_interval_ms", fallback=RESCAN_INTERVAL_MS),
-            RESCAN_INTERVAL_MS, min_value=500)
+            RESCAN_INTERVAL_MS,
+            min_value=500,
+        )
         FAILED_CAMERA_COOLDOWN_SEC = _as_float(
-            parser.get("camera", "failed_camera_cooldown_sec", fallback=FAILED_CAMERA_COOLDOWN_SEC),
-            FAILED_CAMERA_COOLDOWN_SEC, min_value=1.0)
+            parser.get(
+                "camera",
+                "failed_camera_cooldown_sec",
+                fallback=FAILED_CAMERA_COOLDOWN_SEC,
+            ),
+            FAILED_CAMERA_COOLDOWN_SEC,
+            min_value=1.0,
+        )
         CAMERA_SLOT_COUNT = _as_int(
             parser.get("camera", "slot_count", fallback=CAMERA_SLOT_COUNT),
-            CAMERA_SLOT_COUNT, min_value=1, max_value=8)
+            CAMERA_SLOT_COUNT,
+            min_value=1,
+            max_value=8,
+        )
         KILL_DEVICE_HOLDERS = _as_bool(
             parser.get("camera", "kill_device_holders", fallback=KILL_DEVICE_HOLDERS),
-            KILL_DEVICE_HOLDERS)
+            KILL_DEVICE_HOLDERS,
+        )
         USE_GSTREAMER = _as_bool(
-            parser.get("camera", "use_gstreamer", fallback=USE_GSTREAMER),
-            USE_GSTREAMER)
+            parser.get("camera", "use_gstreamer", fallback=USE_GSTREAMER), USE_GSTREAMER
+        )
 
     if parser.has_section("profile"):
         PROFILE_CAPTURE_WIDTH = _as_int(
             parser.get("profile", "capture_width", fallback=PROFILE_CAPTURE_WIDTH),
-            PROFILE_CAPTURE_WIDTH, min_value=160, max_value=1920)
+            PROFILE_CAPTURE_WIDTH,
+            min_value=160,
+            max_value=1920,
+        )
         PROFILE_CAPTURE_HEIGHT = _as_int(
             parser.get("profile", "capture_height", fallback=PROFILE_CAPTURE_HEIGHT),
-            PROFILE_CAPTURE_HEIGHT, min_value=120, max_value=1080)
+            PROFILE_CAPTURE_HEIGHT,
+            min_value=120,
+            max_value=1080,
+        )
         PROFILE_CAPTURE_FPS = _as_int(
             parser.get("profile", "capture_fps", fallback=PROFILE_CAPTURE_FPS),
-            PROFILE_CAPTURE_FPS, min_value=1, max_value=60)
+            PROFILE_CAPTURE_FPS,
+            min_value=1,
+            max_value=60,
+        )
         PROFILE_UI_FPS = _as_int(
             parser.get("profile", "ui_fps", fallback=PROFILE_UI_FPS),
-            PROFILE_UI_FPS, min_value=1, max_value=60)
+            PROFILE_UI_FPS,
+            min_value=1,
+            max_value=60,
+        )
 
     if parser.has_section("health"):
         HEALTH_LOG_INTERVAL_SEC = _as_float(
             parser.get("health", "log_interval_sec", fallback=HEALTH_LOG_INTERVAL_SEC),
-            HEALTH_LOG_INTERVAL_SEC, min_value=5.0)
+            HEALTH_LOG_INTERVAL_SEC,
+            min_value=5.0,
+        )
 
     if LOG_FILE_ENV:
         LOG_FILE = LOG_FILE_ENV
@@ -382,7 +468,9 @@ def _systemd_notify(message):
         logging.debug("systemd notify failed")
 
 
-def _log_health_summary(camera_widgets, placeholder_slots, active_indexes, failed_indexes):
+def _log_health_summary(
+    camera_widgets, placeholder_slots, active_indexes, failed_indexes
+):
     online = 0
     for w in camera_widgets:
         if getattr(w, "_latest_frame", None) is not None:
@@ -396,6 +484,7 @@ def _log_health_summary(camera_widgets, placeholder_slots, active_indexes, faile
         len(failed_indexes),
     )
     _write_watchdog_heartbeat()
+
 
 # ============================================================
 # CAMERA CAPTURE WORKER
@@ -448,14 +537,18 @@ class CaptureWorker(QThread):
                     if not (self._cap and self._cap.isOpened()):
                         self._open_fail_count += 1
                         if self._open_fail_count % 10 == 0:
-                            logging.warning("Camera %s open failed (%d attempts)",
-                                            self.stream_link, self._open_fail_count)
+                            logging.warning(
+                                "Camera %s open failed (%d attempts)",
+                                self.stream_link,
+                                self._open_fail_count,
+                            )
                         if self._online:
                             self._online = False
                             self.status_changed.emit(False)
                         time.sleep(self._reconnect_backoff)
                         self._reconnect_backoff = min(
-                            self._reconnect_backoff * 1.5, 10.0)
+                            self._reconnect_backoff * 1.5, 10.0
+                        )
                         continue
                     self._reconnect_backoff = 1.0
                     self._open_fail_count = 0
@@ -491,8 +584,7 @@ class CaptureWorker(QThread):
 
                 self.msleep(1)
             except Exception:
-                logging.exception(
-                    "Exception in CaptureWorker %s", self.stream_link)
+                logging.exception("Exception in CaptureWorker %s", self.stream_link)
                 time.sleep(0.2)
 
         self._close_capture()
@@ -503,9 +595,13 @@ class CaptureWorker(QThread):
         try:
             cap = None
             backend_name = "V4L2"
-            
+
             # Try GStreamer first if enabled (more efficient MJPEG pipeline)
-            if USE_GSTREAMER and platform.system() == "Linux" and isinstance(self.stream_link, int):
+            if (
+                USE_GSTREAMER
+                and platform.system() == "Linux"
+                and isinstance(self.stream_link, int)
+            ):
                 try:
                     w = int(self.capture_width) if self.capture_width else 640
                     h = int(self.capture_height) if self.capture_height else 480
@@ -523,7 +619,10 @@ class CaptureWorker(QThread):
                         test_ret = cap.grab()
                         if test_ret:
                             backend_name = "GStreamer"
-                            logging.info("GStreamer pipeline opened for camera %s", self.stream_link)
+                            logging.info(
+                                "GStreamer pipeline opened for camera %s",
+                                self.stream_link,
+                            )
                         else:
                             cap.release()
                             cap = None
@@ -532,9 +631,11 @@ class CaptureWorker(QThread):
                             cap.release()
                         cap = None
                 except Exception as e:
-                    logging.debug("GStreamer failed for camera %s: %s", self.stream_link, e)
+                    logging.debug(
+                        "GStreamer failed for camera %s: %s", self.stream_link, e
+                    )
                     cap = None
-            
+
             # Fallback to V4L2 if GStreamer failed or not enabled
             if cap is None:
                 backend = cv2.CAP_ANY
@@ -542,7 +643,7 @@ class CaptureWorker(QThread):
                     backend = cv2.CAP_V4L2
                 cap = cv2.VideoCapture(self.stream_link, backend)
                 backend_name = "V4L2"
-            
+
             if not cap or not cap.isOpened():
                 try:
                     cap.release()
@@ -554,8 +655,9 @@ class CaptureWorker(QThread):
             if backend_name == "V4L2":
                 # Request MJPEG if available to reduce decode overhead.
                 try:
-                    cap.set(cv2.CAP_PROP_FOURCC,
-                            cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
+                    cap.set(
+                        cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc("M", "J", "P", "G")
+                    )
                 except Exception:
                     pass
 
@@ -594,15 +696,23 @@ class CaptureWorker(QThread):
                     raw = int(self._cap.get(cv2.CAP_PROP_FOURCC))
                     fourcc = "".join([chr((raw >> (8 * i)) & 0xFF) for i in range(4)])
                     if fourcc.strip() and fourcc != "MJPG":
-                        logging.info("Camera %s using FOURCC=%s", self.stream_link, fourcc)
+                        logging.info(
+                            "Camera %s using FOURCC=%s", self.stream_link, fourcc
+                        )
                 except Exception:
                     pass
                 try:
                     actual_w = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                     actual_h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                     actual_fps = float(self._cap.get(cv2.CAP_PROP_FPS))
-                    logging.info("Camera %s format %dx%d @ %.1f FPS (%s)",
-                                 self.stream_link, actual_w, actual_h, actual_fps, backend_name)
+                    logging.info(
+                        "Camera %s format %dx%d @ %.1f FPS (%s)",
+                        self.stream_link,
+                        actual_w,
+                        actual_h,
+                        actual_fps,
+                        backend_name,
+                    )
                 except Exception:
                     pass
                 logging.info(
@@ -668,6 +778,7 @@ class CaptureWorker(QThread):
         self.wait(2000)
         self._close_capture()
 
+
 # ============================================================
 # FULLSCREEN OVERLAY
 # ------------------------------------------------------------
@@ -686,8 +797,9 @@ class FullscreenOverlay(QtWidgets.QWidget):
         self.label = QtWidgets.QLabel(self)
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.label.setScaledContents(True)
-        self.label.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored,
-                                 QtWidgets.QSizePolicy.Policy.Ignored)
+        self.label.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Ignored
+        )
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.label)
@@ -703,6 +815,7 @@ class FullscreenOverlay(QtWidgets.QWidget):
             self.on_click_exit()
             return True
         return super().event(event)
+
 
 # ============================================================
 # CAMERA WIDGET
@@ -742,7 +855,7 @@ class CameraWidget(QtWidgets.QWidget):
         self.setMouseTracking(True)
         self.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
-            QtWidgets.QSizePolicy.Policy.Expanding
+            QtWidgets.QSizePolicy.Policy.Expanding,
         )
 
         self.screen_width = max(1, width)
@@ -775,15 +888,18 @@ class CameraWidget(QtWidgets.QWidget):
 
         # Video display label or settings title
         self.video_label = QtWidgets.QLabel(self)
-        self.video_label.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
-                                       QtWidgets.QSizePolicy.Policy.Expanding)
+        self.video_label.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Expanding,
+        )
         self.video_label.setMinimumSize(1, 1)
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_label.setScaledContents(True)
         self.video_label.setMouseTracking(True)
         self.video_label.setObjectName(f"{self.widget_id}_label")
         self.video_label.setAttribute(
-            QtCore.Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
+            QtCore.Qt.WidgetAttribute.WA_AcceptTouchEvents, True
+        )
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -793,7 +909,9 @@ class CameraWidget(QtWidgets.QWidget):
             self.video_label.setText(self.placeholder_text or "SETTINGS")
             self.video_label.setStyleSheet("color: #ffffff; font-size: 20px;")
 
-            button_style = "QPushButton { padding: 10px 16px; font-size: 18px; min-width: 100px; }"
+            button_style = (
+                "QPushButton { padding: 10px 16px; font-size: 18px; min-width: 100px; }"
+            )
 
             restart_button = QtWidgets.QPushButton("Restart")
             restart_button.setStyleSheet(button_style)
@@ -813,14 +931,11 @@ class CameraWidget(QtWidgets.QWidget):
             layout.addStretch(1)
             layout.addWidget(self.video_label)
             layout.addSpacing(6)
-            layout.addWidget(
-                restart_button, alignment=Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(restart_button, alignment=Qt.AlignmentFlag.AlignCenter)
             layout.addSpacing(4)
-            layout.addWidget(
-                night_mode_button, alignment=Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(night_mode_button, alignment=Qt.AlignmentFlag.AlignCenter)
             layout.addSpacing(4)
-            layout.addWidget(
-                exit_button, alignment=Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(exit_button, alignment=Qt.AlignmentFlag.AlignCenter)
             layout.addStretch(1)
         else:
             layout.addWidget(self.video_label)
@@ -855,8 +970,9 @@ class CameraWidget(QtWidgets.QWidget):
         # Start capture worker in background thread (if enabled)
         self.worker = None
         if self.capture_enabled and stream_link is not None:
-            cap_w, cap_h = request_capture_size if request_capture_size else (
-                None, None)
+            cap_w, cap_h = (
+                request_capture_size if request_capture_size else (None, None)
+            )
             self.worker = CaptureWorker(
                 stream_link,
                 parent=self,
@@ -919,7 +1035,7 @@ class CameraWidget(QtWidgets.QWidget):
 
     def _apply_ui_fps(self, ui_fps):
         """Update UI render timer to match camera UI FPS.
-        
+
         Compensates for render overhead to achieve actual target FPS.
         """
         self.ui_render_fps = max(1, int(ui_fps))
@@ -940,8 +1056,7 @@ class CameraWidget(QtWidgets.QWidget):
         if ui_fps is not None:
             self._apply_ui_fps(ui_fps)
 
-        cap_w, cap_h = request_capture_size if request_capture_size else (
-            None, None)
+        cap_w, cap_h = request_capture_size if request_capture_size else (None, None)
         self.worker = CaptureWorker(
             stream_link,
             parent=self,
@@ -962,8 +1077,7 @@ class CameraWidget(QtWidgets.QWidget):
 
         self._latest_frame = None
         self._render_placeholder("CONNECTING...")
-        logging.info("Attached camera %s to widget %s",
-                     stream_link, self.widget_id)
+        logging.info("Attached camera %s to widget %s", stream_link, self.widget_id)
 
     def eventFilter(self, obj, event):
         """Handle touch and mouse events from widget or label."""
@@ -1019,11 +1133,10 @@ class CameraWidget(QtWidgets.QWidget):
                 return True
 
             hold_time = (time.time() * 1000.0) - self._press_time
-            logging.debug("Touch release %s hold=%dms",
-                          self.widget_id, int(hold_time))
+            logging.debug("Touch release %s hold=%dms", self.widget_id, int(hold_time))
 
             swap_parent = self._grid_parent
-            if not swap_parent or not hasattr(swap_parent, 'selected_camera'):
+            if not swap_parent or not hasattr(swap_parent, "selected_camera"):
                 self._reset_mouse_state()
                 self.toggle_fullscreen()
                 return True
@@ -1036,12 +1149,13 @@ class CameraWidget(QtWidgets.QWidget):
                 self._reset_mouse_state()
                 return True
 
-            if (swap_parent.selected_camera and
-                    swap_parent.selected_camera != self and
-                    not self.is_fullscreen):
+            if (
+                swap_parent.selected_camera
+                and swap_parent.selected_camera != self
+                and not self.is_fullscreen
+            ):
                 other = swap_parent.selected_camera
-                logging.debug("SWAP %s <-> %s",
-                              other.widget_id, self.widget_id)
+                logging.debug("SWAP %s <-> %s", other.widget_id, self.widget_id)
                 self.do_swap(other, self, swap_parent)
                 other.swap_active = False
                 other.reset_style()
@@ -1083,16 +1197,18 @@ class CameraWidget(QtWidgets.QWidget):
     def _on_mouse_release(self, event):
         """Handle mouse release as click/hold action."""
         try:
-            if (event.button() != QtCore.Qt.MouseButton.LeftButton or
-                    not self._press_widget_id or self._press_widget_id != self.widget_id):
+            if (
+                event.button() != QtCore.Qt.MouseButton.LeftButton
+                or not self._press_widget_id
+                or self._press_widget_id != self.widget_id
+            ):
                 return True
 
             hold_time = (time.time() * 1000.0) - self._press_time
-            logging.debug("Release %s hold=%dms",
-                          self.widget_id, int(hold_time))
+            logging.debug("Release %s hold=%dms", self.widget_id, int(hold_time))
 
             swap_parent = self._grid_parent
-            if not swap_parent or not hasattr(swap_parent, 'selected_camera'):
+            if not swap_parent or not hasattr(swap_parent, "selected_camera"):
                 self._reset_mouse_state()
                 self.toggle_fullscreen()
                 return True
@@ -1105,12 +1221,13 @@ class CameraWidget(QtWidgets.QWidget):
                 self._reset_mouse_state()
                 return True
 
-            if (swap_parent.selected_camera and
-                    swap_parent.selected_camera != self and
-                    not self.is_fullscreen):
+            if (
+                swap_parent.selected_camera
+                and swap_parent.selected_camera != self
+                and not self.is_fullscreen
+            ):
                 other = swap_parent.selected_camera
-                logging.debug("SWAP %s <-> %s",
-                              other.widget_id, self.widget_id)
+                logging.debug("SWAP %s <-> %s", other.widget_id, self.widget_id)
                 self.do_swap(other, self, swap_parent)
                 other.swap_active = False
                 other.reset_style()
@@ -1144,8 +1261,8 @@ class CameraWidget(QtWidgets.QWidget):
     def do_swap(self, source, target, layout_parent):
         """Swap two widgets inside the grid layout."""
         try:
-            source_pos = getattr(source, 'grid_position', None)
-            target_pos = getattr(target, 'grid_position', None)
+            source_pos = getattr(source, "grid_position", None)
+            target_pos = getattr(target, "grid_position", None)
             if source_pos is None or target_pos is None:
                 logging.debug("Swap failed - missing positions")
                 return
@@ -1156,8 +1273,7 @@ class CameraWidget(QtWidgets.QWidget):
             layout.addWidget(target, *source_pos)
             layout.addWidget(source, *target_pos)
             source.grid_position, target.grid_position = target_pos, source_pos
-            logging.debug("Swap complete %s <-> %s",
-                          source.widget_id, target.widget_id)
+            logging.debug("Swap complete %s <-> %s", source.widget_id, target.widget_id)
         except Exception:
             logging.exception("do_swap")
 
@@ -1213,8 +1329,11 @@ class CameraWidget(QtWidgets.QWidget):
             return
         if text == self._last_placeholder_text and not self.swap_active:
             return
-        target_label = self._fs_overlay.label if (
-            self.is_fullscreen and self._fs_overlay) else self.video_label
+        target_label = (
+            self._fs_overlay.label
+            if (self.is_fullscreen and self._fs_overlay)
+            else self.video_label
+        )
         target_label.setPixmap(QtGui.QPixmap())
         target_label.setText(text)
         target_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1230,11 +1349,13 @@ class CameraWidget(QtWidgets.QWidget):
         try:
             frame_bgr = self._latest_frame
             if frame_bgr is None:
-                self._render_placeholder(
-                    self.placeholder_text or "DISCONNECTED")
+                self._render_placeholder(self.placeholder_text or "DISCONNECTED")
                 return
 
-            if self._last_frame_ts and (time.time() - self._last_frame_ts) > self._stale_frame_timeout_sec:
+            if (
+                self._last_frame_ts
+                and (time.time() - self._last_frame_ts) > self._stale_frame_timeout_sec
+            ):
                 self._latest_frame = None
                 self._render_placeholder("DISCONNECTED")
                 self._restart_capture_if_stale()
@@ -1245,8 +1366,10 @@ class CameraWidget(QtWidgets.QWidget):
             else:
                 target_size = self.video_label.size()
 
-            if (self._frame_id == self._last_rendered_id and
-                    self._last_rendered_size == target_size):
+            if (
+                self._frame_id == self._last_rendered_id
+                and self._last_rendered_size == target_size
+            ):
                 return
 
             if self.night_mode_enabled:
@@ -1262,10 +1385,16 @@ class CameraWidget(QtWidgets.QWidget):
                         self._night_bgr = np.empty((h, w, 3), dtype=frame_bgr.dtype)
 
                     if frame_bgr.ndim == 2:
-                        cv2.convertScaleAbs(frame_bgr, alpha=1.6, beta=0, dst=self._night_gray)
+                        cv2.convertScaleAbs(
+                            frame_bgr, alpha=1.6, beta=0, dst=self._night_gray
+                        )
                     else:
-                        cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY, dst=self._night_gray)
-                        cv2.convertScaleAbs(self._night_gray, alpha=1.6, beta=0, dst=self._night_gray)
+                        cv2.cvtColor(
+                            frame_bgr, cv2.COLOR_BGR2GRAY, dst=self._night_gray
+                        )
+                        cv2.convertScaleAbs(
+                            self._night_gray, alpha=1.6, beta=0, dst=self._night_gray
+                        )
 
                     self._night_bgr[:, :, 0].fill(0)
                     self._night_bgr[:, :, 1].fill(0)
@@ -1279,15 +1408,21 @@ class CameraWidget(QtWidgets.QWidget):
                 h, w = frame_bgr.shape
                 bytes_per_line = w
                 img = QtGui.QImage(
-                    frame_bgr.data, w, h, bytes_per_line,
-                    QtGui.QImage.Format.Format_Grayscale8
+                    frame_bgr.data,
+                    w,
+                    h,
+                    bytes_per_line,
+                    QtGui.QImage.Format.Format_Grayscale8,
                 )
             else:
                 h, w, ch = frame_bgr.shape
                 bytes_per_line = ch * w
                 img = QtGui.QImage(
-                    frame_bgr.data, w, h, bytes_per_line,
-                    QtGui.QImage.Format.Format_BGR888
+                    frame_bgr.data,
+                    w,
+                    h,
+                    bytes_per_line,
+                    QtGui.QImage.Format.Format_BGR888,
                 )
 
             self._pixmap_cache.convertFromImage(img)
@@ -1295,12 +1430,16 @@ class CameraWidget(QtWidgets.QWidget):
             # Fullscreen scales to screen size; grid uses label size.
             if self.is_fullscreen and self._fs_overlay:
                 if target_size.width() > 0 and target_size.height() > 0:
-                    if (self._scaled_pixmap_cache is None or
-                            self._scaled_pixmap_cache_size != target_size):
+                    if (
+                        self._scaled_pixmap_cache is None
+                        or self._scaled_pixmap_cache_size != target_size
+                    ):
                         self._scaled_pixmap_cache = QtGui.QPixmap(target_size)
                         self._scaled_pixmap_cache_size = target_size
                     self._scaled_pixmap_cache.fill(Qt.GlobalColor.black)
-                    target_rect = QtCore.QRect(0, 0, target_size.width(), target_size.height())
+                    target_rect = QtCore.QRect(
+                        0, 0, target_size.width(), target_size.height()
+                    )
                     painter = QtGui.QPainter(self._scaled_pixmap_cache)
                     painter.drawPixmap(target_rect, self._pixmap_cache)
                     painter.end()
@@ -1309,14 +1448,21 @@ class CameraWidget(QtWidgets.QWidget):
                     self._fs_overlay.label.setPixmap(self._pixmap_cache)
                 self._fs_overlay.label.setText("")
             else:
-                if (target_size.width() > 0 and target_size.height() > 0 and
-                        self._pixmap_cache.size() != target_size):
-                    if (self._scaled_pixmap_cache is None or
-                            self._scaled_pixmap_cache_size != target_size):
+                if (
+                    target_size.width() > 0
+                    and target_size.height() > 0
+                    and self._pixmap_cache.size() != target_size
+                ):
+                    if (
+                        self._scaled_pixmap_cache is None
+                        or self._scaled_pixmap_cache_size != target_size
+                    ):
                         self._scaled_pixmap_cache = QtGui.QPixmap(target_size)
                         self._scaled_pixmap_cache_size = target_size
                     self._scaled_pixmap_cache.fill(Qt.GlobalColor.black)
-                    target_rect = QtCore.QRect(0, 0, target_size.width(), target_size.height())
+                    target_rect = QtCore.QRect(
+                        0, 0, target_size.width(), target_size.height()
+                    )
                     painter = QtGui.QPainter(self._scaled_pixmap_cache)
                     painter.drawPixmap(target_rect, self._pixmap_cache)
                     painter.end()
@@ -1332,7 +1478,6 @@ class CameraWidget(QtWidgets.QWidget):
                 self.frame_count += 1
         except Exception:
             logging.exception("render frame")
-
 
     @pyqtSlot(bool)
     def on_status_changed(self, online):
@@ -1350,7 +1495,8 @@ class CameraWidget(QtWidgets.QWidget):
         """Restore default border styling."""
         self.video_label.setStyleSheet("")
         self.setStyleSheet(
-            self.swap_ready_style if self.swap_active else self.normal_style)
+            self.swap_ready_style if self.swap_active else self.normal_style
+        )
 
     def _print_fps(self):
         """Log rendering FPS for this widget."""
@@ -1400,14 +1546,18 @@ class CameraWidget(QtWidgets.QWidget):
         now = time.time()
         if (now - self._last_restart_ts) < self._restart_cooldown_sec:
             return
-        recent = [t for t in self._restart_events if (now - t) <= self._restart_window_sec]
+        recent = [
+            t for t in self._restart_events if (now - t) <= self._restart_window_sec
+        ]
         if len(recent) >= self._max_restarts_per_window:
             logging.warning("Restart limit reached for %s", self.camera_stream_link)
             return
         self._restart_events.append(now)
         self._last_restart_ts = now
         try:
-            logging.info("Restarting capture for %s after stale frames", self.camera_stream_link)
+            logging.info(
+                "Restarting capture for %s after stale frames", self.camera_stream_link
+            )
             self.worker.stop()
         except Exception:
             pass
@@ -1440,7 +1590,9 @@ class CameraWidget(QtWidgets.QWidget):
         if self.worker and getattr(self.worker, "_cap", None):
             try:
                 raw = int(self.worker._cap.get(cv2.CAP_PROP_FOURCC))
-                format_fourcc = "".join([chr((raw >> (8 * i)) & 0xFF) for i in range(4)])
+                format_fourcc = "".join(
+                    [chr((raw >> (8 * i)) & 0xFF) for i in range(4)]
+                )
             except Exception:
                 format_fourcc = "unknown"
         logging.info(
@@ -1465,10 +1617,11 @@ class CameraWidget(QtWidgets.QWidget):
     def cleanup(self):
         """Stop the capture worker thread cleanly."""
         try:
-            if hasattr(self, 'worker') and self.worker:
+            if hasattr(self, "worker") and self.worker:
                 self.worker.stop()
         except Exception:
             pass
+
 
 # ============================================================
 # GRID LAYOUT HELPERS
@@ -1496,6 +1649,7 @@ def get_smart_grid(num_cameras):
         rows = (num_cameras + cols - 1) // cols
         return rows, cols
 
+
 # ============================================================
 # SYSTEM / PROCESS HELPERS
 # ------------------------------------------------------------
@@ -1507,7 +1661,8 @@ def _run_cmd(cmd):
     """Run a shell command and return stdout, stderr, returncode."""
     try:
         result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=2)
+            cmd, shell=True, capture_output=True, text=True, timeout=2
+        )
         return result.stdout.strip(), result.stderr.strip(), result.returncode
     except Exception:
         return "", "", 1
@@ -1583,6 +1738,7 @@ def kill_device_holders(device_path, grace=0.4):
 
     return True
 
+
 # ============================================================
 # CAMERA DISCOVERY
 # ------------------------------------------------------------
@@ -1634,11 +1790,11 @@ def test_single_camera(
 
 def get_video_indexes():
     """List integer indices for /dev/video* devices."""
-    video_devices = glob.glob('/dev/video*')
+    video_devices = glob.glob("/dev/video*")
     indexes = []
     for device in sorted(video_devices):
         try:
-            index = int(device.split('video')[-1])
+            index = int(device.split("video")[-1])
             indexes.append(index)
         except Exception:
             pass
@@ -1653,8 +1809,9 @@ def find_working_cameras():
         return []
 
     max_workers = min(4, len(indexes))
-    logging.info("Testing %d cameras concurrently (workers=%d)...",
-                 len(indexes), max_workers)
+    logging.info(
+        "Testing %d cameras concurrently (workers=%d)...", len(indexes), max_workers
+    )
     working = []
     lock = threading.Lock()
 
@@ -1673,8 +1830,13 @@ def find_working_cameras():
         final_working = []
         with ThreadPoolExecutor(max_workers=min(4, len(working))) as executor:
             futures = [
-                executor.submit(test_single_camera, idx, retries=2,
-                                retry_delay=0.15, allow_kill=False)
+                executor.submit(
+                    test_single_camera,
+                    idx,
+                    retries=2,
+                    retry_delay=0.15,
+                    allow_kill=False,
+                )
                 for idx in working
             ]
             for future in as_completed(futures):
@@ -1687,6 +1849,7 @@ def find_working_cameras():
     cv2.destroyAllWindows()
     logging.info("FINAL Working cameras: %s", working)
     return working
+
 
 # ============================================================
 # CLEANUP + PROFILE SELECTION
@@ -1705,7 +1868,13 @@ def safe_cleanup(widgets):
 
 def choose_profile(camera_count):
     """Pick capture resolution and FPS based on camera count."""
-    return PROFILE_CAPTURE_WIDTH, PROFILE_CAPTURE_HEIGHT, PROFILE_CAPTURE_FPS, PROFILE_UI_FPS
+    return (
+        PROFILE_CAPTURE_WIDTH,
+        PROFILE_CAPTURE_HEIGHT,
+        PROFILE_CAPTURE_FPS,
+        PROFILE_UI_FPS,
+    )
+
 
 # ============================================================
 # MAIN ENTRYPOINT
@@ -1731,6 +1900,7 @@ def main():
     def on_sigint(sig, frame):
         safe_cleanup(camera_widgets)
         sys.exit(0)
+
     signal.signal(signal.SIGINT, on_sigint)
     atexit.register(lambda: safe_cleanup(camera_widgets))
 
@@ -1760,8 +1930,7 @@ def main():
 
     known_indexes = set(get_video_indexes())
     active_indexes = set(working_cameras)
-    failed_indexes = {idx: time.time()
-                      for idx in (known_indexes - active_indexes)}
+    failed_indexes = {idx: time.time() for idx in (known_indexes - active_indexes)}
 
     layout = QtWidgets.QGridLayout(central_widget)
     layout.setContentsMargins(10, 10, 10, 10)
@@ -1805,8 +1974,7 @@ def main():
 
     active_camera_count = max(1, min(len(working_cameras), CAMERA_SLOT_COUNT))
     cap_w, cap_h, cap_fps, ui_fps = choose_profile(active_camera_count)
-    logging.info("Profile: %dx%d @ %d FPS (UI %d FPS)",
-                 cap_w, cap_h, cap_fps, ui_fps)
+    logging.info("Profile: %dx%d @ %d FPS (UI %d FPS)", cap_w, cap_h, cap_fps, ui_fps)
 
     # Exactly 3 camera slots at all times
     for slot_idx in range(CAMERA_SLOT_COUNT):
@@ -1888,9 +2056,11 @@ def main():
                     if new_ui < ui_base:
                         w.set_dynamic_ui_fps(new_ui)
                 stress_counter["stress"] = 0
-                logging.info("Stress detected (load=%s, temp=%s). Lowering FPS.",
-                             f"{load_ratio:.2f}" if load_ratio is not None else "n/a",
-                             f"{temp_c:.1f}C" if temp_c is not None else "n/a")
+                logging.info(
+                    "Stress detected (load=%s, temp=%s). Lowering FPS.",
+                    f"{load_ratio:.2f}" if load_ratio is not None else "n/a",
+                    f"{temp_c:.1f}C" if temp_c is not None else "n/a",
+                )
 
             if stress_counter["recover"] >= RECOVER_HOLD_COUNT:
                 for w in camera_widgets:
@@ -1913,6 +2083,7 @@ def main():
 
     # Background rescan to attach new cameras to empty slots
     if placeholder_slots:
+
         def rescan_and_attach():
             """Scan for new cameras and attach them to placeholders."""
             if not placeholder_slots:
@@ -1945,8 +2116,7 @@ def main():
                 )
                 if ok is not None:
                     slot = placeholder_slots.pop(0)
-                    slot.attach_camera(
-                        ok, cap_fps, (cap_w, cap_h), ui_fps=ui_fps)
+                    slot.attach_camera(ok, cap_fps, (cap_w, cap_h), ui_fps=ui_fps)
                     slot.set_night_mode(night_mode_state["enabled"])
                     camera_widgets.append(slot)
                     active_indexes.add(ok)
@@ -1974,11 +2144,11 @@ def main():
         health_timer.start()
 
     app.aboutToQuit.connect(lambda: safe_cleanup(camera_widgets))
-    QtGui.QShortcut(QtGui.QKeySequence('q'), mw,
-                    lambda: (safe_cleanup(camera_widgets), app.quit()))
+    QtGui.QShortcut(
+        QtGui.QKeySequence("q"), mw, lambda: (safe_cleanup(camera_widgets), app.quit())
+    )
 
-    logging.info(
-        "Short click=fullscreen toggle. Hold 400ms=swap mode. Ctrl+Q=quit.")
+    logging.info("Short click=fullscreen toggle. Hold 400ms=swap mode. Ctrl+Q=quit.")
     sys.exit(app.exec())
 
 
