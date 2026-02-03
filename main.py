@@ -5,53 +5,39 @@
 # 2. LOGGING
 # 3. DYNAMIC PERFORMANCE TUNING
 # 4. CAMERA RESCAN (HOT-PLUG SUPPORT)
-# 5. FRAME POOL
-# 6. CAMERA CAPTURE WORKER
-# 7. FULLSCREEN OVERLAY
-# 8. CAMERA WIDGET
-# 9. GRID LAYOUT HELPERS
-# 10. SYSTEM / PROCESS HELPERS
-# 11. CAMERA DISCOVERY
-# 12. CLEANUP + PROFILE SELECTION
-# 13. MAIN ENTRYPOINT
+# 5. CAMERA CAPTURE WORKER
+# 6. FULLSCREEN OVERLAY
+# 7. CAMERA WIDGET
+# 8. GRID LAYOUT HELPERS
+# 9. SYSTEM / PROCESS HELPERS
+# 10. CAMERA DISCOVERY
+# 11. CLEANUP + PROFILE SELECTION
+# 12. MAIN ENTRYPOINT
 # ============================================================
-
-# ------------------------------------------------------------
-# Standard library imports
-# ------------------------------------------------------------
-import atexit
-import glob
 import logging
-import os
-import platform
-import re
-import signal
-import subprocess
-import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+import glob
+import subprocess
+from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QThread, QTimer
+import sys
+import cv2
 import time
 import traceback
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-# ------------------------------------------------------------
-# Third-party imports
-# ------------------------------------------------------------
-import cv2
-import numpy as np
-from PyQt6 import QtCore, QtGui, QtWidgets
-from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QThread, QTimer
-
-try:
-    from picamera2 import Picamera2
-    PICAMERA2_AVAILABLE = True
-except Exception:
-    Picamera2 = None
-    PICAMERA2_AVAILABLE = False
+import atexit
+import signal
+import platform
+import os
+import re
 
 # ============================================================
 # DEBUG PRINTS (disabled by default)
 # ------------------------------------------------------------
+# Simple toggle for extra print logs without changing code.
+# ============================================================
+# DEBUG_PRINTS = True
 DEBUG_PRINTS = False
 
 
@@ -64,32 +50,23 @@ def dprint(*args, **kwargs):
 # ============================================================
 # LOGGING
 # ------------------------------------------------------------
-BLIND_SPOT_MODE = True
-PICAMERA2_ENABLED = True
-FULLSCREEN_SMOOTH = False
-NIGHT_MODE_DEFAULT = False
-NIGHT_MODE_GAMMA = 1.6
-NIGHT_MODE_ALPHA = 1.15
-NIGHT_MODE_BETA = 10
-
-log_level = logging.WARNING if BLIND_SPOT_MODE else logging.INFO
-logging.basicConfig(level=log_level,
+# Standard logging for normal runtime info and errors.
+# ============================================================
+logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(message)s")
 
 # ============================================================
 # DYNAMIC PERFORMANCE TUNING
 # ------------------------------------------------------------
+# Controls how FPS adapts when CPU or temperature is high.
+# ============================================================
 DYNAMIC_FPS_ENABLED = True
 PERF_CHECK_INTERVAL_MS = 2000
 MIN_DYNAMIC_FPS = 5
-CPU_LOAD_THRESHOLD = 0.85
-CPU_TEMP_THRESHOLD_C = 70.0
-STRESS_HOLD_COUNT = 2
-RECOVER_HOLD_COUNT = 3
-
-# Reconnection settings
-MAX_RECONNECT_BACKOFF_SEC = 10.0
-RECONNECT_BACKOFF_MULTIPLIER = 1.5
+CPU_LOAD_THRESHOLD = 0.85   # 85% avg load
+CPU_TEMP_THRESHOLD_C = 70.0  # Celsius
+STRESS_HOLD_COUNT = 2       # consecutive checks before reducing fps
+RECOVER_HOLD_COUNT = 3      # consecutive checks before increasing fps
 
 # ============================================================
 # CAMERA RESCAN (HOT-PLUG SUPPORT)
@@ -146,46 +123,6 @@ def _is_system_stressed():
     return stressed, load_ratio, temp_c
 
 # ============================================================
-# FRAME POOL
-# ------------------------------------------------------------
-# Reuse numpy arrays to reduce allocation overhead.
-# ============================================================
-
-
-class FramePool:
-    """Thread-safe pool of reusable numpy arrays."""
-
-    def __init__(self, max_size=8):
-        self._pool = deque(maxlen=max_size)
-        self._lock = threading.Lock()
-
-    def get(self, shape, dtype=np.uint8):
-        """Get a buffer from pool or allocate new one."""
-        with self._lock:
-            try:
-                frame = self._pool.pop()
-                if frame.shape == shape and frame.dtype == dtype:
-                    return frame
-            except IndexError:
-                pass
-        return np.empty(shape, dtype=dtype)
-
-    def release(self, frame):
-        """Return a buffer to the pool for reuse."""
-        if frame is not None:
-            with self._lock:
-                self._pool.append(frame)
-
-    def clear(self):
-        """Clear all pooled buffers."""
-        with self._lock:
-            self._pool.clear()
-
-
-# Global frame pool shared across all capture workers
-_frame_pool = FramePool(max_size=16)
-
-# ============================================================
 # CAMERA CAPTURE WORKER
 # ------------------------------------------------------------
 # Runs on its own QThread to avoid blocking the UI thread.
@@ -193,7 +130,9 @@ _frame_pool = FramePool(max_size=16)
 
 
 class CaptureWorker(QThread):
+    # Signal emitted when a new frame is ready for the UI thread.
     frame_ready = pyqtSignal(object)
+    # Signal emitted when camera connection status changes.
     status_changed = pyqtSignal(bool)
 
     def __init__(
@@ -204,7 +143,6 @@ class CaptureWorker(QThread):
         target_fps=None,
         capture_width=None,
         capture_height=None,
-        downsample_max_dim=None,
     ):
         """Initialize camera capture settings and state."""
         super().__init__(parent)
@@ -217,178 +155,97 @@ class CaptureWorker(QThread):
         self._emit_interval = 1.0 / 30.0
         self.capture_width = capture_width
         self.capture_height = capture_height
-        self.downsample_max_dim = downsample_max_dim
+        # Buffer holds most recent frames, used to decouple capture from UI.
         self.buffer = deque(maxlen=maxlen)
-        self.use_picamera2 = bool(
-            PICAMERA2_ENABLED and PICAMERA2_AVAILABLE and stream_link == "picamera2")
-        self._picam2 = None
-
-        # Atomic reads don't need locks in CPython for simple float/int
-        # Using a simple attribute for emit_interval that UI can read
-        self._cached_emit_interval = self._emit_interval
+        # Lock protects changes to FPS/emit interval from other threads.
+        self._fps_lock = threading.Lock()
 
     def run(self):
         """Capture loop: open camera, grab frames, emit, reconnect on failure."""
         logging.info("Camera %s thread started", self.stream_link)
-
         while self._running:
             try:
-                if self.use_picamera2:
-                    if not self._ensure_picamera2_open():
+                # Ensure capture is open; reconnect if it fails.
+                if self._cap is None or not self._cap.isOpened():
+                    self._open_capture()
+                    if not (self._cap and self._cap.isOpened()):
+                        time.sleep(self._reconnect_backoff)
+                        self._reconnect_backoff = min(
+                            self._reconnect_backoff * 1.5, 10.0)
                         continue
-                else:
-                    if not self._ensure_capture_open():
-                        continue
+                    self._reconnect_backoff = 1.0
+                    self.status_changed.emit(True)
 
-                # Check if we should emit before expensive decode
-                now = time.monotonic()
-                emit_interval = self._cached_emit_interval
-
-                time_since_emit = now - self._last_emit
-                if time_since_emit < emit_interval:
-                    # Sleep smartly instead of fixed 1ms
-                    sleep_ms = max(
-                        1, int((emit_interval - time_since_emit) * 1000) - 1)
-                    self.msleep(min(sleep_ms, 10))
+                # Grab & retrieve keeps latency low vs read().
+                grabbed = self._cap.grab()
+                if not grabbed:
+                    self._close_capture()
+                    self.status_changed.emit(False)
                     continue
 
-                if self.use_picamera2:
-                    frame = self._picamera2_capture_frame()
-                    if frame is None:
-                        self._handle_capture_failure()
-                        continue
-                else:
-                    # Grab only - don't decode yet
-                    grabbed = self._cap.grab()
-                    if not grabbed:
-                        self._handle_capture_failure()
-                        continue
+                ret, frame = self._cap.retrieve()
+                if not ret or frame is None:
+                    self._close_capture()
+                    self.status_changed.emit(False)
+                    continue
 
-                    # Now decode - only when we'll actually use the frame
-                    ret, frame = self._cap.retrieve()
-                    if not ret or frame is None:
-                        self._handle_capture_failure()
-                        continue
+                now = time.time()
+                with self._fps_lock:
+                    emit_interval = self._emit_interval
+                # Throttle emits to target FPS to avoid UI overload.
+                if now - self._last_emit >= emit_interval:
+                    self.buffer.append(frame)
+                    self.frame_ready.emit(frame)
+                    self._last_emit = now
 
-                # Downsample in capture thread to reduce UI load
-                if self.downsample_max_dim:
-                    frame = self._downsample_frame(frame)
-
-                self.buffer.append(frame)
-                if self.use_picamera2:
-                    self.frame_ready.emit((frame, True))
-                else:
-                    self.frame_ready.emit((frame, False))
-                self._last_emit = now
-
+                self.msleep(1)
             except Exception:
                 logging.exception(
                     "Exception in CaptureWorker %s", self.stream_link)
                 time.sleep(0.2)
 
         self._close_capture()
-        self._close_picamera2()
         logging.info("Camera %s thread stopped", self.stream_link)
-
-    def _ensure_capture_open(self):
-        """Ensure capture is open; reconnect if needed. Returns True if ready."""
-        if self._cap is not None and self._cap.isOpened():
-            return True
-
-        self._open_capture()
-        if self._cap and self._cap.isOpened():
-            self._reconnect_backoff = 1.0
-            self.status_changed.emit(True)
-            return True
-
-        time.sleep(self._reconnect_backoff)
-        self._reconnect_backoff = min(
-            self._reconnect_backoff * RECONNECT_BACKOFF_MULTIPLIER,
-            MAX_RECONNECT_BACKOFF_SEC
-        )
-        return False
-
-    def _handle_capture_failure(self):
-        """Handle capture read failure."""
-        self._close_capture()
-        self._close_picamera2()
-        self.status_changed.emit(False)
-
-    def _ensure_picamera2_open(self):
-        """Ensure Picamera2 is open; reconnect if needed. Returns True if ready."""
-        if self._picam2 is not None:
-            return True
-
-        self._open_picamera2()
-        if self._picam2 is not None:
-            self._reconnect_backoff = 1.0
-            self.status_changed.emit(True)
-            return True
-
-        time.sleep(self._reconnect_backoff)
-        self._reconnect_backoff = min(
-            self._reconnect_backoff * RECONNECT_BACKOFF_MULTIPLIER,
-            MAX_RECONNECT_BACKOFF_SEC
-        )
-        return False
-
-    def _picamera2_capture_frame(self):
-        """Capture a frame from Picamera2."""
-        try:
-            return self._picam2.capture_array("main") if self._picam2 else None
-        except Exception:
-            logging.exception("Picamera2 capture failed")
-            return None
-
-    def _downsample_frame(self, frame):
-        """Downsample frame if larger than max dimension."""
-        h, w = frame.shape[:2]
-        max_dim = self.downsample_max_dim
-
-        if w <= max_dim and h <= max_dim:
-            return frame
-
-        scale = max_dim / max(w, h)
-        new_w = int(w * scale)
-        new_h = int(h * scale)
-
-        # Use INTER_NEAREST for speed, INTER_LINEAR for quality
-        return cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
 
     def _open_capture(self):
         """Open the camera and apply preferred capture settings."""
         try:
-            backend = cv2.CAP_V4L2 if platform.system() == "Linux" else cv2.CAP_ANY
+            backend = cv2.CAP_ANY
+            if platform.system() == "Linux":
+                backend = cv2.CAP_V4L2
             cap = cv2.VideoCapture(self.stream_link, backend)
-
             if not cap or not cap.isOpened():
-                self._safe_release(cap)
+                try:
+                    cap.release()
+                except Exception:
+                    pass
                 return
 
-            # Request MJPEG to reduce decode overhead
+            # Request MJPEG if available to reduce decode overhead.
             try:
                 cap.set(cv2.CAP_PROP_FOURCC,
                         cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
             except Exception:
                 pass
 
-            # Apply capture resolution
+            # Apply capture resolution when requested.
             if self.capture_width:
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(self.capture_width))
             if self.capture_height:
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(self.capture_height))
 
-            # Minimize internal buffering
+            # Reduce internal buffering to keep frames current.
             try:
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             except Exception:
                 pass
 
-            # Set FPS
+            # Request FPS; 0 may let camera choose.
             try:
-                fps = float(
-                    self._target_fps) if self._target_fps and self._target_fps > 0 else 0
-                cap.set(cv2.CAP_PROP_FPS, fps)
+                if self._target_fps and self._target_fps > 0:
+                    cap.set(cv2.CAP_PROP_FPS, float(self._target_fps))
+                else:
+                    cap.set(cv2.CAP_PROP_FPS, 0)
             except Exception:
                 pass
 
@@ -402,8 +259,12 @@ class CaptureWorker(QThread):
                     self.capture_height,
                     1.0 / self._emit_interval if self._emit_interval > 0 else 0.0,
                 )
+                return
             else:
-                self._safe_release(cap)
+                try:
+                    cap.release()
+                except Exception:
+                    pass
         except Exception:
             logging.exception("Failed to open capture %s", self.stream_link)
 
@@ -417,53 +278,8 @@ class CaptureWorker(QThread):
         if fps <= 1.0 or fps > 240.0:
             fps = 30.0
 
-        self._emit_interval = 1.0 / max(1.0, fps)
-        self._cached_emit_interval = self._emit_interval
-
-    def _open_picamera2(self):
-        """Open Picamera2 and configure video stream."""
-        try:
-            if not PICAMERA2_AVAILABLE:
-                return
-
-            picam2 = Picamera2()
-            size = None
-            if self.capture_width and self.capture_height:
-                size = (int(self.capture_width), int(self.capture_height))
-
-            config = picam2.create_video_configuration(
-                main={
-                    "size": size or (640, 480),
-                    "format": "RGB888",
-                },
-                controls={
-                    "FrameRate": float(self._target_fps) if self._target_fps else 30.0
-                }
-            )
-            picam2.configure(config)
-            picam2.start()
-            self._picam2 = picam2
-            self._emit_interval = 1.0 / max(1.0, float(self._target_fps or 30.0))
-            self._cached_emit_interval = self._emit_interval
-            logging.info(
-                "Opened Picamera2 (requested %sx%s) -> emit fps=%.1f",
-                self.capture_width,
-                self.capture_height,
-                1.0 / self._emit_interval if self._emit_interval > 0 else 0.0,
-            )
-        except Exception:
-            logging.exception("Failed to open Picamera2")
-            self._close_picamera2()
-
-    def _close_picamera2(self):
-        """Stop Picamera2 if open."""
-        try:
-            if self._picam2:
-                self._picam2.stop()
-                self._picam2.close()
-        except Exception:
-            pass
-        self._picam2 = None
+        with self._fps_lock:
+            self._emit_interval = 1.0 / max(1.0, fps)
 
     def set_target_fps(self, fps):
         """Update target FPS and camera setting at runtime."""
@@ -473,52 +289,37 @@ class CaptureWorker(QThread):
             fps = float(fps)
             if fps <= 0:
                 return
-
-            self._target_fps = fps
-            self._emit_interval = 1.0 / max(1.0, fps)
-            self._cached_emit_interval = self._emit_interval
-
-            if self._cap:
-                try:
+            with self._fps_lock:
+                self._target_fps = fps
+                self._emit_interval = 1.0 / max(1.0, fps)
+            try:
+                if self._cap:
                     self._cap.set(cv2.CAP_PROP_FPS, fps)
-                except Exception:
-                    pass
-            if self._picam2:
-                try:
-                    self._picam2.set_controls({"FrameRate": fps})
-                except Exception:
-                    pass
+            except Exception:
+                pass
         except Exception:
             logging.exception("set_target_fps")
 
-    def set_downsample_max_dim(self, max_dim):
-        """Update downsample dimension at runtime."""
-        self.downsample_max_dim = max_dim
-
-    def _safe_release(self, cap):
-        """Safely release a capture object."""
+    def _close_capture(self):
+        """Release camera handle if open."""
         try:
-            if cap:
-                cap.release()
+            if self._cap:
+                self._cap.release()
+                self._cap = None
         except Exception:
             pass
 
-    def _close_capture(self):
-        """Release camera handle if open."""
-        self._safe_release(self._cap)
-        self._cap = None
-
     def stop(self):
-        """Stop capture loop and wait for thread exit."""
+        """Stop capture loop and wait briefly for thread exit."""
         self._running = False
-        self.requestInterruption()
         self.wait(2000)
         self._close_capture()
-        self._close_picamera2()
 
 # ============================================================
 # FULLSCREEN OVERLAY
 # ------------------------------------------------------------
+# Transparent top-level widget for fullscreen display.
+# ============================================================
 
 
 class FullscreenOverlay(QtWidgets.QWidget):
@@ -530,11 +331,9 @@ class FullscreenOverlay(QtWidgets.QWidget):
         self.setStyleSheet("background:black;")
         self.label = QtWidgets.QLabel(self)
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.label.setScaledContents(False)  # We handle scaling ourselves
-        self.label.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Ignored,
-            QtWidgets.QSizePolicy.Policy.Ignored
-        )
+        self.label.setScaledContents(True)
+        self.label.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored,
+                                 QtWidgets.QSizePolicy.Policy.Ignored)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.label)
@@ -548,9 +347,12 @@ class FullscreenOverlay(QtWidgets.QWidget):
 # ============================================================
 # CAMERA WIDGET
 # ------------------------------------------------------------
+# One tile in the grid. Manages UI input and rendering.
+# ============================================================
 
 
 class CameraWidget(QtWidgets.QWidget):
+    # How long a press needs to be to enter "swap mode".
     hold_threshold_ms = 400
 
     def __init__(
@@ -568,14 +370,12 @@ class CameraWidget(QtWidgets.QWidget):
         placeholder_text=None,
         settings_mode=False,
         on_restart=None,
-        downsample_max_dim=None,
-        on_toggle_night_mode=None,
-        night_mode_enabled=False,
     ):
         """Initialize tile UI, worker thread, and timers."""
         super().__init__(parent)
         logging.debug("Creating camera %s", stream_link)
 
+        # Widget configuration: touch enabled, expands in grid, dark theme.
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
         self.setMouseTracking(True)
@@ -590,35 +390,34 @@ class CameraWidget(QtWidgets.QWidget):
         self.camera_stream_link = stream_link
         self.widget_id = f"cam{stream_link}_{id(self)}"
 
+        # State used for fullscreen toggle + drag/hold swap mode.
         self.is_fullscreen = False
         self.grid_position = None
         self._press_widget_id = None
-        self._press_time = 0.0
+        self._press_time = 0
         self._grid_parent = None
         self._touch_active = False
         self.swap_active = False
+
         self._fs_overlay = None
 
         self.capture_enabled = bool(enable_capture)
         self.placeholder_text = placeholder_text
         self.settings_mode = settings_mode
-        self.downsample_max_dim = downsample_max_dim
-        self.night_mode_enabled = bool(night_mode_enabled)
-        self._night_mode_lut = self._build_night_mode_lut()
 
+        # Visual styles for normal and swap-ready state
         self.normal_style = "border: 2px solid #555; background: black;"
         self.swap_ready_style = "border: 4px solid #FFFF00; background: black;"
         self.setStyleSheet(self.normal_style)
         self.setObjectName(self.widget_id)
 
+        # Video display label or settings title
         self.video_label = QtWidgets.QLabel(self)
-        self.video_label.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Expanding,
-            QtWidgets.QSizePolicy.Policy.Expanding
-        )
+        self.video_label.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
+                                       QtWidgets.QSizePolicy.Policy.Expanding)
         self.video_label.setMinimumSize(1, 1)
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.video_label.setScaledContents(False)  # We handle scaling
+        self.video_label.setScaledContents(True)
         self.video_label.setMouseTracking(True)
         self.video_label.setObjectName(f"{self.widget_id}_label")
         self.video_label.setAttribute(
@@ -627,28 +426,44 @@ class CameraWidget(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
+        # Settings tile uses buttons instead of a video stream.
         if self.settings_mode:
-            self._setup_settings_mode(
-                layout,
-                on_restart,
-                on_toggle_night_mode,
-                self.night_mode_enabled,
-            )
+            self.video_label.setText(self.placeholder_text or "SETTINGS")
+            self.video_label.setStyleSheet("color: #ffffff; font-size: 20px;")
+
+            button_style = "QPushButton { padding: 10px 16px; font-size: 18px; min-width: 100px; }"
+
+            restart_button = QtWidgets.QPushButton("Restart")
+            restart_button.setStyleSheet(button_style)
+            if on_restart:
+                restart_button.clicked.connect(on_restart)
+
+            exit_button = QtWidgets.QPushButton("Exit")
+            exit_button.setStyleSheet(button_style)
+            exit_button.clicked.connect(self._exit_app)
+
+            layout.addStretch(1)
+            layout.addWidget(self.video_label)
+            layout.addSpacing(12)
+            layout.addWidget(
+                restart_button, alignment=Qt.AlignmentFlag.AlignCenter)
+            layout.addSpacing(8)
+            layout.addWidget(
+                exit_button, alignment=Qt.AlignmentFlag.AlignCenter)
+            layout.addStretch(1)
         else:
             layout.addWidget(self.video_label)
 
-        # Frame tracking
+        # FPS counters for logging UI render performance.
         self.frame_count = 0
-        self.prev_time = time.monotonic()
+        self.prev_time = time.time()
         self._latest_frame = None
-        self._last_rendered_frame = None  # Track to skip unchanged frames
-        self._frame_id = 0  # Incremented on new frame
-        self._latest_is_rgb = False
 
+        # Base FPS is the desired target; current FPS is adjusted dynamically.
         self.base_target_fps = target_fps
         self.current_target_fps = target_fps
 
-        # Start capture worker
+        # Start capture worker in background thread (if enabled)
         self.worker = None
         if self.capture_enabled and stream_link is not None:
             cap_w, cap_h = request_capture_size if request_capture_size else (
@@ -660,16 +475,17 @@ class CameraWidget(QtWidgets.QWidget):
                 target_fps=target_fps,
                 capture_width=cap_w,
                 capture_height=cap_h,
-                downsample_max_dim=downsample_max_dim,
             )
             self.worker.frame_ready.connect(self.on_frame)
             self.worker.status_changed.connect(self.on_status_changed)
             self.worker.start()
         elif not self.settings_mode:
+            # No capture: set placeholder immediately
             self._latest_frame = None
             self._render_placeholder(self.placeholder_text or "DISCONNECTED")
 
-        # UI render timer - decoupled from capture FPS
+        # Timer to render latest frame at a stable UI FPS.
+        # This is intentionally decoupled from capture FPS.
         if not self.settings_mode:
             self.ui_render_fps = max(1, int(ui_fps))
             self.render_timer = QTimer(self)
@@ -680,59 +496,25 @@ class CameraWidget(QtWidgets.QWidget):
             self.ui_render_fps = 0
             self.render_timer = None
 
-        # FPS diagnostics timer
-        self.ui_timer = None  # Created by main for batch logging
+        # Timer to print UI FPS diagnostics (only for real cameras)
+        if self.capture_enabled and not self.settings_mode:
+            self.ui_timer = QTimer(self)
+            self.ui_timer.setInterval(1000)
+            self.ui_timer.timeout.connect(self._print_fps)
+            self.ui_timer.start()
+        else:
+            self.ui_timer = None
 
         self.installEventFilter(self)
         self.video_label.installEventFilter(self)
 
         logging.debug("Widget %s ready", self.widget_id)
 
-    def _setup_settings_mode(
-        self,
-        layout,
-        on_restart,
-        on_toggle_night_mode,
-        night_mode_enabled,
-    ):
-        """Configure widget as settings tile."""
-        self.video_label.setText(self.placeholder_text or "SETTINGS")
-        self.video_label.setStyleSheet("color: #ffffff; font-size: 20px;")
-
-        restart_button = QtWidgets.QPushButton("Restart")
-        restart_button.setStyleSheet(
-            "QPushButton { padding: 10px 16px; font-size: 18px; }"
-        )
-        if on_restart:
-            restart_button.clicked.connect(on_restart)
-
-        night_mode_button = QtWidgets.QPushButton("Night Mode: Off")
-        night_mode_button.setCheckable(True)
-        night_mode_button.setChecked(bool(night_mode_enabled))
-        night_mode_button.setStyleSheet(
-            "QPushButton { padding: 10px 16px; font-size: 18px; }"
-            "QPushButton:checked { background: #2f6f3b; color: #ffffff; }"
-        )
-
-        def on_night_mode_toggled(checked):
-            night_mode_button.setText(
-                "Night Mode: On" if checked else "Night Mode: Off"
-            )
-            if on_toggle_night_mode:
-                on_toggle_night_mode(bool(checked))
-
-        night_mode_button.toggled.connect(on_night_mode_toggled)
-        on_night_mode_toggled(night_mode_button.isChecked())
-
-        layout.addStretch(1)
-        layout.addWidget(self.video_label)
-        layout.addSpacing(12)
-        layout.addWidget(
-            night_mode_button, alignment=Qt.AlignmentFlag.AlignCenter)
-        layout.addSpacing(12)
-        layout.addWidget(
-            restart_button, alignment=Qt.AlignmentFlag.AlignCenter)
-        layout.addStretch(1)
+    def _exit_app(self):
+        """Exit the application gracefully."""
+        app = QtWidgets.QApplication.instance()
+        if app:
+            app.quit()
 
     def _ensure_fullscreen_overlay(self):
         """Create fullscreen overlay only when needed."""
@@ -767,11 +549,16 @@ class CameraWidget(QtWidgets.QWidget):
             target_fps=target_fps,
             capture_width=cap_w,
             capture_height=cap_h,
-            downsample_max_dim=self.downsample_max_dim,
         )
         self.worker.frame_ready.connect(self.on_frame)
         self.worker.status_changed.connect(self.on_status_changed)
         self.worker.start()
+
+        if self.ui_timer is None:
+            self.ui_timer = QTimer(self)
+            self.ui_timer.setInterval(1000)
+            self.ui_timer.timeout.connect(self._print_fps)
+            self.ui_timer.start()
 
         self._latest_frame = None
         self._render_placeholder("CONNECTING...")
@@ -783,24 +570,25 @@ class CameraWidget(QtWidgets.QWidget):
         if obj not in (self, self.video_label):
             return super().eventFilter(obj, event)
 
-        etype = event.type()
-        if etype == QtCore.QEvent.Type.TouchBegin:
+        if event.type() == QtCore.QEvent.Type.TouchBegin:
             return self._on_touch_begin(event)
-        if etype == QtCore.QEvent.Type.TouchEnd:
+        if event.type() == QtCore.QEvent.Type.TouchEnd:
             return self._on_touch_end(event)
-        if etype == QtCore.QEvent.Type.MouseButtonPress:
-            return self._on_mouse_press(event)
-        if etype == QtCore.QEvent.Type.MouseButtonRelease:
-            return self._on_mouse_release(event)
 
+        if event.type() == QtCore.QEvent.Type.MouseButtonPress:
+            return self._on_mouse_press(event)
+        if event.type() == QtCore.QEvent.Type.MouseButtonRelease:
+            return self._on_mouse_release(event)
         return super().eventFilter(obj, event)
 
     def _on_touch_begin(self, event):
         """Record touch-down timestamp and source widget."""
         try:
-            if event.points() and len(event.points()) == 1:
+            if not event.points():
+                return True
+            if len(event.points()) == 1:
                 self._touch_active = True
-                self._press_time = time.monotonic() * 1000.0
+                self._press_time = time.time() * 1000.0
                 self._press_widget_id = self.widget_id
                 self._grid_parent = self.parent()
                 logging.debug("Touch begin %s", self.widget_id)
@@ -811,18 +599,78 @@ class CameraWidget(QtWidgets.QWidget):
     def _on_touch_end(self, event):
         """Handle touch-up as a click/hold action."""
         try:
-            if self._touch_active:
-                self._touch_active = False
-                self._handle_press_release()
+            if not self._touch_active:
+                return True
+            self._touch_active = False
+            self._handle_release_as_left_click()
         except Exception:
             logging.exception("touch end")
+        return True
+
+    def _handle_release_as_left_click(self):
+        """
+        Unified release handler:
+        - short tap: fullscreen toggle
+        - long press: swap select
+        - swap if another camera is selected
+        """
+        try:
+            if not self._press_widget_id or self._press_widget_id != self.widget_id:
+                return True
+
+            hold_time = (time.time() * 1000.0) - self._press_time
+            logging.debug("Touch release %s hold=%dms",
+                          self.widget_id, int(hold_time))
+
+            swap_parent = self._grid_parent
+            if not swap_parent or not hasattr(swap_parent, 'selected_camera'):
+                self._reset_mouse_state()
+                self.toggle_fullscreen()
+                return True
+
+            if swap_parent.selected_camera == self:
+                logging.debug("Clear swap %s", self.widget_id)
+                swap_parent.selected_camera = None
+                self.swap_active = False
+                self.reset_style()
+                self._reset_mouse_state()
+                return True
+
+            if (swap_parent.selected_camera and
+                    swap_parent.selected_camera != self and
+                    not self.is_fullscreen):
+                other = swap_parent.selected_camera
+                logging.debug("SWAP %s <-> %s",
+                              other.widget_id, self.widget_id)
+                self.do_swap(other, self, swap_parent)
+                other.swap_active = False
+                other.reset_style()
+                swap_parent.selected_camera = None
+                self._reset_mouse_state()
+                return True
+
+            if hold_time >= self.hold_threshold_ms and not self.is_fullscreen:
+                logging.debug("ENTER swap %s", self.widget_id)
+                swap_parent.selected_camera = self
+                self.swap_active = True
+                self.setStyleSheet(self.swap_ready_style)
+                self._reset_mouse_state()
+                return True
+
+            logging.debug("Short tap fullscreen %s", self.widget_id)
+            self.toggle_fullscreen()
+
+        except Exception:
+            logging.exception("touch release")
+        finally:
+            self._reset_mouse_state()
         return True
 
     def _on_mouse_press(self, event):
         """Record mouse down position and time."""
         try:
             if event.button() == QtCore.Qt.MouseButton.LeftButton:
-                self._press_time = time.monotonic() * 1000.0
+                self._press_time = time.time() * 1000.0
                 self._press_widget_id = self.widget_id
                 self._grid_parent = self.parent()
                 logging.debug("Press %s", self.widget_id)
@@ -835,25 +683,11 @@ class CameraWidget(QtWidgets.QWidget):
     def _on_mouse_release(self, event):
         """Handle mouse release as click/hold action."""
         try:
-            if event.button() == QtCore.Qt.MouseButton.LeftButton:
-                if self._press_widget_id == self.widget_id:
-                    self._handle_press_release()
-        except Exception:
-            logging.exception("mouse release")
-        return True
+            if (event.button() != QtCore.Qt.MouseButton.LeftButton or
+                    not self._press_widget_id or self._press_widget_id != self.widget_id):
+                return True
 
-    def _handle_press_release(self):
-        """
-        Unified release handler for both touch and mouse:
-        - short tap: fullscreen toggle
-        - long press: swap select
-        - swap if another camera is selected
-        """
-        try:
-            if not self._press_widget_id or self._press_widget_id != self.widget_id:
-                return
-
-            hold_time = (time.monotonic() * 1000.0) - self._press_time
+            hold_time = (time.time() * 1000.0) - self._press_time
             logging.debug("Release %s hold=%dms",
                           self.widget_id, int(hold_time))
 
@@ -861,18 +695,16 @@ class CameraWidget(QtWidgets.QWidget):
             if not swap_parent or not hasattr(swap_parent, 'selected_camera'):
                 self._reset_mouse_state()
                 self.toggle_fullscreen()
-                return
+                return True
 
-            # Clicking on already-selected camera clears selection
             if swap_parent.selected_camera == self:
                 logging.debug("Clear swap %s", self.widget_id)
                 swap_parent.selected_camera = None
                 self.swap_active = False
                 self.reset_style()
                 self._reset_mouse_state()
-                return
+                return True
 
-            # Clicking on different camera while one is selected = swap
             if (swap_parent.selected_camera and
                     swap_parent.selected_camera != self and
                     not self.is_fullscreen):
@@ -884,25 +716,24 @@ class CameraWidget(QtWidgets.QWidget):
                 other.reset_style()
                 swap_parent.selected_camera = None
                 self._reset_mouse_state()
-                return
+                return True
 
-            # Long press = enter swap mode
             if hold_time >= self.hold_threshold_ms and not self.is_fullscreen:
                 logging.debug("ENTER swap %s", self.widget_id)
                 swap_parent.selected_camera = self
                 self.swap_active = True
                 self.setStyleSheet(self.swap_ready_style)
                 self._reset_mouse_state()
-                return
+                return True
 
-            # Short tap = fullscreen toggle
-            logging.debug("Short tap fullscreen %s", self.widget_id)
+            logging.debug("Short click fullscreen %s", self.widget_id)
             self.toggle_fullscreen()
 
         except Exception:
-            logging.exception("press release")
+            logging.exception("mouse release")
         finally:
             self._reset_mouse_state()
+        return True
 
     def _reset_mouse_state(self):
         """Clear press state to avoid accidental reuse."""
@@ -952,9 +783,6 @@ class CameraWidget(QtWidgets.QWidget):
         self._fs_overlay.activateWindow()
         self.is_fullscreen = True
 
-        # Force re-render for fullscreen
-        self._last_rendered_frame = None
-
         if self._latest_frame is None and not self.settings_mode:
             self._render_placeholder(self.placeholder_text or "DISCONNECTED")
 
@@ -965,8 +793,6 @@ class CameraWidget(QtWidgets.QWidget):
         if self._fs_overlay:
             self._fs_overlay.hide()
         self.is_fullscreen = False
-        # Force re-render for grid
-        self._last_rendered_frame = None
 
     @pyqtSlot(object)
     def on_frame(self, frame_bgr):
@@ -974,13 +800,8 @@ class CameraWidget(QtWidgets.QWidget):
         try:
             if frame_bgr is None:
                 return
-            if isinstance(frame_bgr, tuple) and len(frame_bgr) == 2:
-                frame, is_rgb = frame_bgr
-            else:
-                frame, is_rgb = frame_bgr, False
-            self._latest_frame = frame
-            self._latest_is_rgb = bool(is_rgb)
-            self._frame_id += 1
+            # Only store; UI thread renders on its timer.
+            self._latest_frame = frame_bgr
         except Exception:
             logging.exception("on_frame")
 
@@ -988,17 +809,12 @@ class CameraWidget(QtWidgets.QWidget):
         """Render placeholder text when no frame is available."""
         if self.settings_mode:
             return
-
-        target_label = (
-            self._fs_overlay.label
-            if (self.is_fullscreen and self._fs_overlay)
-            else self.video_label
-        )
+        target_label = self._fs_overlay.label if (
+            self.is_fullscreen and self._fs_overlay) else self.video_label
         target_label.setPixmap(QtGui.QPixmap())
         target_label.setText(text)
         target_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         target_label.setStyleSheet("color: #bbbbbb; font-size: 24px;")
-
         if self.swap_active:
             self.setStyleSheet(self.swap_ready_style)
 
@@ -1006,78 +822,47 @@ class CameraWidget(QtWidgets.QWidget):
         """Convert latest frame to QPixmap and display it."""
         if self.settings_mode:
             return
-
         try:
             frame_bgr = self._latest_frame
-            if isinstance(frame_bgr, tuple):
-                return
-
             if frame_bgr is None:
-                if self._last_rendered_frame is not None:
-                    self._render_placeholder(
-                        self.placeholder_text or "DISCONNECTED")
-                    self._last_rendered_frame = None
+                self._render_placeholder(
+                    self.placeholder_text or "DISCONNECTED")
                 return
 
-            if self.night_mode_enabled:
-                frame_bgr = self._apply_night_mode(frame_bgr)
-
-            # Skip if frame hasn't changed
-            current_frame_id = self._frame_id
-            if current_frame_id == self._last_rendered_frame:
-                return
-            self._last_rendered_frame = current_frame_id
-
-            # Determine target label and size
-            if self.is_fullscreen and self._fs_overlay:
-                target_label = self._fs_overlay.label
-                target_size = self._fs_overlay.size()
-                use_smooth = FULLSCREEN_SMOOTH
-            else:
-                target_label = self.video_label
-                target_size = self.video_label.size()
-                use_smooth = False  # Fast transform for grid tiles
-
-            # Convert numpy frame to Qt image
+            # Convert numpy frame to Qt image, handling grayscale or BGR.
             if frame_bgr.ndim == 2:
                 h, w = frame_bgr.shape
                 bytes_per_line = w
-                fmt = QtGui.QImage.Format.Format_Grayscale8
+                img = QtGui.QImage(
+                    frame_bgr.data, w, h, bytes_per_line,
+                    QtGui.QImage.Format.Format_Grayscale8
+                )
             else:
                 h, w, ch = frame_bgr.shape
                 bytes_per_line = ch * w
-                if getattr(self, "_latest_is_rgb", False):
-                    fmt = QtGui.QImage.Format.Format_RGB888
-                else:
-                    fmt = QtGui.QImage.Format.Format_BGR888
+                img = QtGui.QImage(
+                    frame_bgr.data, w, h, bytes_per_line,
+                    QtGui.QImage.Format.Format_BGR888
+                )
 
-            if not frame_bgr.flags['C_CONTIGUOUS']:
-                frame_bgr = np.ascontiguousarray(frame_bgr)
-
-            # Create QImage without an extra copy; QPixmap will own its copy
-            img = QtGui.QImage(frame_bgr.data, w, h, bytes_per_line, fmt)
             pix = QtGui.QPixmap.fromImage(img)
 
-            # Scale to target size
-            if (target_size.width() > 0 and target_size.height() > 0 and
-                    (target_size.width() != w or target_size.height() != h)):
-                transform = (
-                    Qt.TransformationMode.SmoothTransformation
-                    if use_smooth
-                    else Qt.TransformationMode.FastTransformation
-                )
-                pix = pix.scaled(
-                    target_size,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    transform
-                )
-
-            target_label.setPixmap(pix)
-            target_label.setText("")
-            target_label.setStyleSheet("")
+            # Fullscreen scales to screen size; grid uses label size.
+            if self.is_fullscreen and self._fs_overlay:
+                target_size = self._fs_overlay.size()
+                if target_size.width() > 0 and target_size.height() > 0:
+                    pix = pix.scaled(
+                        target_size,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.FastTransformation
+                    )
+                self._fs_overlay.label.setPixmap(pix)
+                self._fs_overlay.label.setText("")
+            else:
+                self.video_label.setPixmap(pix)
+                self.video_label.setText("")
 
             self.frame_count += 1
-
         except Exception:
             logging.exception("render frame")
 
@@ -1089,7 +874,6 @@ class CameraWidget(QtWidgets.QWidget):
             self.video_label.setText("")
         else:
             self._latest_frame = None
-            self._last_rendered_frame = None
             self._render_placeholder("DISCONNECTED")
 
     def reset_style(self):
@@ -1098,16 +882,18 @@ class CameraWidget(QtWidgets.QWidget):
         self.setStyleSheet(
             self.swap_ready_style if self.swap_active else self.normal_style)
 
-    def get_fps_stats(self):
-        """Get current FPS and reset counter. Called by main for batch logging."""
-        now = time.monotonic()
-        elapsed = now - self.prev_time
-        if elapsed >= 0.5:
-            fps = self.frame_count / elapsed if elapsed > 0 else 0.0
-            self.frame_count = 0
-            self.prev_time = now
-            return fps
-        return None
+    def _print_fps(self):
+        """Log rendering FPS for this widget."""
+        try:
+            now = time.time()
+            elapsed = now - self.prev_time
+            if elapsed >= 1.0:
+                fps = self.frame_count / elapsed if elapsed > 0 else 0.0
+                logging.info("%s FPS: %.1f", self.widget_id, fps)
+                self.frame_count = 0
+                self.prev_time = now
+        except Exception:
+            pass
 
     def set_dynamic_fps(self, fps):
         """Apply dynamic FPS change from stress monitor."""
@@ -1123,39 +909,9 @@ class CameraWidget(QtWidgets.QWidget):
         except Exception:
             logging.exception("set_dynamic_fps")
 
-    def set_night_mode(self, enabled):
-        """Toggle night mode image processing."""
-        self.night_mode_enabled = bool(enabled)
-        self._last_rendered_frame = None
-
-    def _build_night_mode_lut(self):
-        """Precompute gamma correction LUT for night mode."""
-        gamma = float(NIGHT_MODE_GAMMA)
-        if gamma <= 0:
-            return None
-        inv_gamma = 1.0 / gamma
-        return np.array([
-            min(255, int(((i / 255.0) ** inv_gamma) * 255.0))
-            for i in range(256)
-        ], dtype=np.uint8)
-
-    def _apply_night_mode(self, frame):
-        """Apply a lightweight night enhancement to a frame."""
-        try:
-            boosted = cv2.convertScaleAbs(
-                frame, alpha=NIGHT_MODE_ALPHA, beta=NIGHT_MODE_BETA)
-            if self._night_mode_lut is not None:
-                boosted = cv2.LUT(boosted, self._night_mode_lut)
-            return boosted
-        except Exception:
-            logging.exception("night mode")
-            return frame
-
     def cleanup(self):
         """Stop the capture worker thread cleanly."""
         try:
-            if self.render_timer:
-                self.render_timer.stop()
             if hasattr(self, 'worker') and self.worker:
                 self.worker.stop()
         except Exception:
@@ -1164,6 +920,8 @@ class CameraWidget(QtWidgets.QWidget):
 # ============================================================
 # GRID LAYOUT HELPERS
 # ------------------------------------------------------------
+# Calculate row/column layout based on camera count.
+# ============================================================
 
 
 def get_smart_grid(num_cameras):
@@ -1181,13 +939,15 @@ def get_smart_grid(num_cameras):
     elif num_cameras <= 9:
         return 3, 3
     else:
-        cols = min(4, int(num_cameras ** 0.5 * 1.5))
+        cols = min(4, int(num_cameras**0.5 * 1.5))
         rows = (num_cameras + cols - 1) // cols
         return rows, cols
 
 # ============================================================
 # SYSTEM / PROCESS HELPERS
 # ------------------------------------------------------------
+# Used to detect and kill processes holding /dev/video*
+# ============================================================
 
 
 def _run_cmd(cmd):
@@ -1234,7 +994,10 @@ def _is_pid_alive(pid):
 
 
 def kill_device_holders(device_path, grace=0.4):
-    """Attempt to terminate any process holding a camera device."""
+    """
+    Attempt to terminate any process holding a camera device.
+    Useful for kiosk-style setups.
+    """
     pids = _get_pids_from_lsof(device_path)
     if not pids:
         pids = _get_pids_from_fuser(device_path)
@@ -1267,11 +1030,11 @@ def kill_device_holders(device_path, grace=0.4):
 
     return True
 
-
-
 # ============================================================
 # CAMERA DISCOVERY
 # ------------------------------------------------------------
+# Scan /dev/video* and test which devices are usable.
+# ============================================================
 
 
 def test_single_camera(
@@ -1329,44 +1092,10 @@ def get_video_indexes():
     return indexes
 
 
-def test_picamera2_camera():
-    """Return a Picamera2 marker if a camera is available."""
-    if not (PICAMERA2_ENABLED and PICAMERA2_AVAILABLE):
-        return None
-
-    picam2 = None
-    try:
-        picam2 = Picamera2()
-        config = picam2.create_video_configuration(
-            main={"size": (640, 480), "format": "RGB888"},
-            controls={"FrameRate": 30.0},
-        )
-        picam2.configure(config)
-        picam2.start()
-        frame = picam2.capture_array("main")
-        if frame is None:
-            return None
-        return "picamera2"
-    except Exception:
-        logging.exception("Picamera2 probe failed")
-        return None
-    finally:
-        try:
-            if picam2:
-                picam2.stop()
-                picam2.close()
-        except Exception:
-            pass
-
-
 def find_working_cameras():
     """Return a list of camera indices that can capture frames."""
-    picam2_marker = test_picamera2_camera()
     indexes = get_video_indexes()
     if not indexes:
-        if picam2_marker:
-            logging.info("No /dev/video* devices found; using Picamera2")
-            return [picam2_marker]
         logging.info("No /dev/video* devices found!")
         return []
 
@@ -1385,14 +1114,14 @@ def find_working_cameras():
                     working.append(result)
                     logging.info("Camera %d OK", result)
 
+    # Second pass to confirm cameras without killing holders
     if working:
         logging.info("Round 2 - Double-check (no pre-kill)...")
         final_working = []
         with ThreadPoolExecutor(max_workers=min(4, len(working))) as executor:
             futures = [
-                executor.submit(
-                    test_single_camera, idx, retries=2, retry_delay=0.15, allow_kill=False
-                )
+                executor.submit(test_single_camera, idx, retries=2,
+                                retry_delay=0.15, allow_kill=False)
                 for idx in working
             ]
             for future in as_completed(futures):
@@ -1402,8 +1131,7 @@ def find_working_cameras():
                     logging.info("Confirmed camera %d", result)
         working = final_working
 
-    if picam2_marker:
-        working = [picam2_marker] + working
+    cv2.destroyAllWindows()
     logging.info("FINAL Working cameras: %s", working)
     return working
 
@@ -1420,43 +1148,17 @@ def safe_cleanup(widgets):
             w.cleanup()
         except Exception:
             pass
-    _frame_pool.clear()
 
 
 def choose_profile(camera_count):
-    """Pick capture resolution, FPS, and downsample based on camera count."""
-    if not BLIND_SPOT_MODE:
-        return {
-            'capture_size': (640, 480),
-            'capture_fps': 20,
-            'ui_fps': 25,
-            'downsample_max_dim': 640,
-        }
-
-    if camera_count <= 1:
-        return {
-            'capture_size': (960, 540),
-            'capture_fps': 30,
-            'ui_fps': 24,
-            'downsample_max_dim': 960,
-        }
-    if camera_count <= 2:
-        return {
-            'capture_size': (640, 360),
-            'capture_fps': 30,
-            'ui_fps': 24,
-            'downsample_max_dim': 640,
-        }
-    return {
-        'capture_size': (640, 360),
-        'capture_fps': 24,
-        'ui_fps': 20,
-        'downsample_max_dim': 640,
-    }
+    """Pick capture resolution and FPS based on camera count."""
+    return 640, 480, 20, 20
 
 # ============================================================
 # MAIN ENTRYPOINT
 # ------------------------------------------------------------
+# Sets up app window, grid layout, cameras, and FPS monitor.
+# ============================================================
 
 
 def main():
@@ -1468,19 +1170,13 @@ def main():
     placeholder_slots = []
 
     CAMERA_SLOT_COUNT = 3
-    night_mode_enabled = NIGHT_MODE_DEFAULT
 
+    # Clean shutdown on Ctrl+C
     def on_sigint(sig, frame):
         safe_cleanup(camera_widgets)
         sys.exit(0)
-
     signal.signal(signal.SIGINT, on_sigint)
     atexit.register(lambda: safe_cleanup(camera_widgets))
-
-    # Allow Python to handle SIGINT properly in Qt event loop
-    sigint_timer = QTimer()
-    sigint_timer.timeout.connect(lambda: None)
-    sigint_timer.start(500)
 
     app.setStyle(QtWidgets.QStyleFactory.create("Fusion"))
     app.setStyleSheet("QWidget { background: #2b2b2b; color: #ffffff; }")
@@ -1491,6 +1187,7 @@ def main():
     central_widget.selected_camera = None
     mw.setCentralWidget(central_widget)
 
+    # Show first, then fullscreen (avoids race conditions)
     mw.show()
 
     def force_fullscreen():
@@ -1507,7 +1204,7 @@ def main():
 
     known_indexes = set(get_video_indexes())
     active_indexes = set(working_cameras)
-    failed_indexes = {idx: time.monotonic()
+    failed_indexes = {idx: time.time()
                       for idx in (known_indexes - active_indexes)}
 
     layout = QtWidgets.QGridLayout(central_widget)
@@ -1515,20 +1212,13 @@ def main():
     layout.setSpacing(10)
 
     def restart_app():
-        """Restart the entire process."""
+        """Restart the entire process (used by settings tile)."""
         logging.info("Restart requested from settings.")
         safe_cleanup(camera_widgets)
         python = sys.executable
         os.execv(python, [python] + sys.argv)
 
-    def toggle_night_mode(enabled):
-        """Apply night mode to all camera tiles."""
-        nonlocal night_mode_enabled
-        night_mode_enabled = bool(enabled)
-        for w in all_widgets:
-            w.set_night_mode(night_mode_enabled)
-
-    # Settings tile
+    # Settings tile (always present, top-left)
     settings_tile = CameraWidget(
         width=1,
         height=1,
@@ -1542,26 +1232,15 @@ def main():
         placeholder_text="SETTINGS",
         settings_mode=True,
         on_restart=restart_app,
-        on_toggle_night_mode=toggle_night_mode,
-        night_mode_enabled=night_mode_enabled,
     )
     all_widgets.append(settings_tile)
 
-    profile = choose_profile(len(working_cameras))
-    cap_w, cap_h = profile['capture_size']
-    cap_fps = profile['capture_fps']
-    ui_fps = profile['ui_fps']
-    downsample_max_dim = profile['downsample_max_dim']
+    active_camera_count = max(1, min(len(working_cameras), CAMERA_SLOT_COUNT))
+    cap_w, cap_h, cap_fps, ui_fps = choose_profile(active_camera_count)
+    logging.info("Profile: %dx%d @ %d FPS (UI %d FPS)",
+                 cap_w, cap_h, cap_fps, ui_fps)
 
-    if BLIND_SPOT_MODE and ui_fps >= cap_fps:
-        ui_fps = max(5, cap_fps - 6)
-
-    logging.info(
-        "Profile: %dx%d @ %d FPS (UI %d FPS, downsample=%s)",
-        cap_w, cap_h, cap_fps, ui_fps, downsample_max_dim
-    )
-
-    # Create camera slots
+    # Exactly 3 camera slots at all times
     for slot_idx in range(CAMERA_SLOT_COUNT):
         if slot_idx < len(working_cameras):
             cam_index = working_cameras[slot_idx]
@@ -1575,8 +1254,6 @@ def main():
                 request_capture_size=(cap_w, cap_h),
                 ui_fps=ui_fps,
                 enable_capture=True,
-                downsample_max_dim=downsample_max_dim,
-                night_mode_enabled=night_mode_enabled,
             )
             camera_widgets.append(cw)
         else:
@@ -1591,7 +1268,6 @@ def main():
                 ui_fps=5,
                 enable_capture=False,
                 placeholder_text="DISCONNECTED",
-                night_mode_enabled=night_mode_enabled,
             )
             placeholder_slots.append(cw)
         all_widgets.append(cw)
@@ -1615,28 +1291,12 @@ def main():
     for c in range(cols):
         layout.setColumnStretch(c, 1)
 
-    # Batch FPS logging - single timer for all cameras
-    def log_all_fps():
-        if not camera_widgets:
-            return
-        stats = {}
-        for w in camera_widgets:
-            fps = w.get_fps_stats()
-            if fps is not None:
-                stats[w.widget_id] = f"{fps:.1f}"
-        if stats:
-            logging.info("FPS: %s", stats)
-
-    fps_log_timer = QTimer(mw)
-    fps_log_timer.setInterval(2000)
-    fps_log_timer.timeout.connect(log_all_fps)
-    fps_log_timer.start()
-
-    # Dynamic FPS adjustment
+    # Dynamic FPS adjustment based on system stress
     if DYNAMIC_FPS_ENABLED and camera_widgets:
         stress_counter = {"stress": 0, "recover": 0}
 
         def adjust_fps():
+            """Lower or restore FPS based on load/temperature."""
             stressed, load_ratio, temp_c = _is_system_stressed()
 
             if stressed:
@@ -1654,11 +1314,9 @@ def main():
                     if new_fps < cur:
                         w.set_dynamic_fps(new_fps)
                 stress_counter["stress"] = 0
-                logging.info(
-                    "Stress detected (load=%s, temp=%s). Lowering FPS.",
-                    f"{load_ratio:.2f}" if load_ratio is not None else "n/a",
-                    f"{temp_c:.1f}C" if temp_c is not None else "n/a"
-                )
+                logging.info("Stress detected (load=%s, temp=%s). Lowering FPS.",
+                             f"{load_ratio:.2f}" if load_ratio is not None else "n/a",
+                             f"{temp_c:.1f}C" if temp_c is not None else "n/a")
 
             if stress_counter["recover"] >= RECOVER_HOLD_COUNT:
                 for w in camera_widgets:
@@ -1675,13 +1333,14 @@ def main():
         perf_timer.timeout.connect(adjust_fps)
         perf_timer.start()
 
-    # Background rescan for hot-plug
+    # Background rescan to attach new cameras to empty slots
     if placeholder_slots:
         def rescan_and_attach():
+            """Scan for new cameras and attach them to placeholders."""
             if not placeholder_slots:
                 return
 
-            now = time.monotonic()
+            now = time.time()
             indexes = get_video_indexes()
 
             candidates = []
@@ -1708,8 +1367,6 @@ def main():
                 )
                 if ok is not None:
                     slot = placeholder_slots.pop(0)
-                    slot.downsample_max_dim = downsample_max_dim
-                    slot.set_night_mode(night_mode_enabled)
                     slot.attach_camera(
                         ok, cap_fps, (cap_w, cap_h), ui_fps=ui_fps)
                     camera_widgets.append(slot)
@@ -1725,10 +1382,8 @@ def main():
         rescan_timer.start()
 
     app.aboutToQuit.connect(lambda: safe_cleanup(camera_widgets))
-    QtGui.QShortcut(
-        QtGui.QKeySequence('q'), mw,
-        lambda: (safe_cleanup(camera_widgets), app.quit())
-    )
+    QtGui.QShortcut(QtGui.QKeySequence('q'), mw,
+                    lambda: (safe_cleanup(camera_widgets), app.quit()))
 
     logging.info(
         "Short click=fullscreen toggle. Hold 400ms=swap mode. Ctrl+Q=quit.")
