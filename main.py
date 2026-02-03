@@ -433,9 +433,7 @@ class CameraWidget(QtWidgets.QWidget):
             self.video_label.setText(self.placeholder_text or "SETTINGS")
             self.video_label.setStyleSheet("color: #ffffff; font-size: 20px;")
 
-            button_style = (
-                "QPushButton { padding: 16px 28px; font-size: 22px; min-width: 160px; min-height: 56px; }"
-            )
+            button_style = "QPushButton { padding: 10px 16px; font-size: 18px; min-width: 100px; }"
 
             restart_button = QtWidgets.QPushButton("Restart")
             restart_button.setStyleSheet(button_style)
@@ -454,13 +452,13 @@ class CameraWidget(QtWidgets.QWidget):
 
             layout.addStretch(1)
             layout.addWidget(self.video_label)
-            layout.addSpacing(20)
+            layout.addSpacing(6)
             layout.addWidget(
                 restart_button, alignment=Qt.AlignmentFlag.AlignCenter)
-            layout.addSpacing(16)
+            layout.addSpacing(4)
             layout.addWidget(
                 night_mode_button, alignment=Qt.AlignmentFlag.AlignCenter)
-            layout.addSpacing(16)
+            layout.addSpacing(4)
             layout.addWidget(
                 exit_button, alignment=Qt.AlignmentFlag.AlignCenter)
             layout.addStretch(1)
