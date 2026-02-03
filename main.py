@@ -330,6 +330,7 @@ class FullscreenOverlay(QtWidgets.QWidget):
         super().__init__(None, Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
         self.on_click_exit = on_click_exit
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
         self.setStyleSheet("background:black;")
         self.label = QtWidgets.QLabel(self)
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -345,6 +346,12 @@ class FullscreenOverlay(QtWidgets.QWidget):
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             self.on_click_exit()
         super().mousePressEvent(event)
+
+    def event(self, event):
+        if event.type() in (QtCore.QEvent.Type.TouchBegin, QtCore.QEvent.Type.TouchEnd):
+            self.on_click_exit()
+            return True
+        return super().event(event)
 
 # ============================================================
 # CAMERA WIDGET
@@ -915,11 +922,7 @@ class CameraWidget(QtWidgets.QWidget):
                         self._scaled_pixmap_cache = QtGui.QPixmap(target_size)
                         self._scaled_pixmap_cache_size = target_size
                     self._scaled_pixmap_cache.fill(Qt.GlobalColor.black)
-                    scaled_size = self._pixmap_cache.size().scaled(
-                        target_size, Qt.AspectRatioMode.KeepAspectRatio)
-                    x = (target_size.width() - scaled_size.width()) // 2
-                    y = (target_size.height() - scaled_size.height()) // 2
-                    target_rect = QtCore.QRect(x, y, scaled_size.width(), scaled_size.height())
+                    target_rect = QtCore.QRect(0, 0, target_size.width(), target_size.height())
                     painter = QtGui.QPainter(self._scaled_pixmap_cache)
                     painter.drawPixmap(target_rect, self._pixmap_cache)
                     painter.end()
@@ -935,11 +938,7 @@ class CameraWidget(QtWidgets.QWidget):
                         self._scaled_pixmap_cache = QtGui.QPixmap(target_size)
                         self._scaled_pixmap_cache_size = target_size
                     self._scaled_pixmap_cache.fill(Qt.GlobalColor.black)
-                    scaled_size = self._pixmap_cache.size().scaled(
-                        target_size, Qt.AspectRatioMode.KeepAspectRatio)
-                    x = (target_size.width() - scaled_size.width()) // 2
-                    y = (target_size.height() - scaled_size.height()) // 2
-                    target_rect = QtCore.QRect(x, y, scaled_size.width(), scaled_size.height())
+                    target_rect = QtCore.QRect(0, 0, target_size.width(), target_size.height())
                     painter = QtGui.QPainter(self._scaled_pixmap_cache)
                     painter.drawPixmap(target_rect, self._pixmap_cache)
                     painter.end()
