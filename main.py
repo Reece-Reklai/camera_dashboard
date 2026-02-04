@@ -14,8 +14,6 @@ import os
 import signal
 import sys
 import time
-from types import FrameType
-from typing import Optional
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtCore import QTimer
@@ -24,8 +22,8 @@ from core import (
     config,
     find_working_cameras,
     get_video_indexes,
-    test_single_camera,
     is_system_stressed,
+    test_single_camera,
 )
 from ui import CameraWidget, get_smart_grid
 from utils import log_health_summary, systemd_notify
@@ -47,13 +45,13 @@ def main() -> None:
     parser = config.load_config()
     config.apply_config(parser)
     config.configure_logging()
-    
+
     logging.info("Starting camera grid app")
     logging.info("Config loaded from %s", config.CONFIG_PATH)
-    
+
     app = QtWidgets.QApplication(sys.argv)
     systemd_notify("READY=1")
-    
+
     camera_widgets = []
     all_widgets = []
     placeholder_slots = []
@@ -219,7 +217,9 @@ def main() -> None:
                     if new_fps < cur:
                         w.set_dynamic_fps(new_fps)
                     ui_base = w.ui_render_fps or ui_fps
-                    new_ui = max(config.MIN_DYNAMIC_UI_FPS, ui_base - config.UI_FPS_STEP)
+                    new_ui = max(
+                        config.MIN_DYNAMIC_UI_FPS, ui_base - config.UI_FPS_STEP
+                    )
                     if new_ui < ui_base:
                         w.set_dynamic_ui_fps(new_ui)
                 stress_counter["stress"] = 0
@@ -268,7 +268,10 @@ def main() -> None:
                 if idx in active_indexes:
                     continue
                 last_failed = failed_indexes.get(idx)
-                if last_failed and (now - last_failed) < config.FAILED_CAMERA_COOLDOWN_SEC:
+                if (
+                    last_failed
+                    and (now - last_failed) < config.FAILED_CAMERA_COOLDOWN_SEC
+                ):
                     continue
                 candidates.append(idx)
 
@@ -315,11 +318,11 @@ def main() -> None:
         health_timer.start()
 
     app.aboutToQuit.connect(lambda: safe_cleanup(camera_widgets))
-    
+
     def quit_handler() -> None:
         safe_cleanup(camera_widgets)
         app.quit()
-    
+
     QtGui.QShortcut(QtGui.QKeySequence("q"), mw, quit_handler)
 
     logging.info("Short click=fullscreen toggle. Hold 400ms=swap mode. Ctrl+Q=quit.")
