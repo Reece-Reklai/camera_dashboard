@@ -200,10 +200,17 @@ stdout = true
 [performance]
 dynamic_fps = true                    # Auto-adjust FPS under stress
 perf_check_interval_ms = 2000         # How often to check system load
-min_dynamic_fps = 5                   # Minimum capture FPS
+min_dynamic_fps = 10                  # Minimum capture FPS
 min_dynamic_ui_fps = 12               # Minimum UI render FPS
+ui_fps_step = 2                       # FPS adjustment step size
 cpu_load_threshold = 0.75             # 75% CPU triggers FPS reduction
-cpu_temp_threshold_c = 70.0           # 70°C triggers FPS reduction
+cpu_temp_threshold_c = 75.0           # 75°C triggers FPS reduction
+stress_hold_count = 3                 # Consecutive stress readings before reducing
+recover_hold_count = 3                # Consecutive normal readings before restoring
+stale_frame_timeout_sec = 1.5         # Seconds before frame considered stale
+restart_cooldown_sec = 5.0            # Minimum time between camera restarts
+max_restarts_per_window = 3           # Max restarts before giving up
+restart_window_sec = 30.0             # Time window for restart counting
 
 [camera]
 rescan_interval_ms = 15000            # Hot-plug detection interval (15s)
@@ -215,8 +222,8 @@ use_gstreamer = true                  # Use GStreamer for capture (faster)
 [profile]
 capture_width = 640
 capture_height = 480
-capture_fps = 20                      # Camera capture rate
-ui_fps = 15                           # UI refresh rate
+capture_fps = 25                      # Camera capture rate
+ui_fps = 20                           # UI refresh rate
 
 [health]
 log_interval_sec = 30                 # Health log frequency
@@ -262,8 +269,8 @@ export CAMERA_DASHBOARD_LOG_FILE=/path/to/app.log
 | `test_config.py` | 20 | Config parsing, validation, defaults |
 | `test_camera.py` | 13 | Camera discovery, capture worker, GStreamer |
 | `test_widgets.py` | 18 | Widget lifecycle, fullscreen, night mode |
-| `test_helpers.py` | 15 | Utility functions, process management |
-| **Total** | **66** | |
+| `test_helpers.py` | 16 | Utility functions, process management |
+| **Total** | **67** | |
 
 ### Manual Test Run
 
@@ -325,8 +332,8 @@ use_gstreamer = false
 # Check logs
 cat logs/camera_dashboard.log | tail -50
 
-# Run with debug output
-DEBUG_PRINTS=true python3 main.py
+# Run with debug logging level
+# Edit config.ini and set: level = DEBUG
 ```
 
 ---
