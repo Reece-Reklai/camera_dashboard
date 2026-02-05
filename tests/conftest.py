@@ -49,7 +49,6 @@ failed_camera_cooldown_sec = 30.0
 slot_count = 3
 kill_device_holders = false
 use_gstreamer = true
-use_avdec = false
 
 [profile]
 capture_width = 640

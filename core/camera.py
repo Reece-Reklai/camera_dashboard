@@ -25,6 +25,34 @@ from core import config
 from utils import kill_device_holders
 
 
+# Cache for GStreamer availability check
+_gstreamer_available: Optional[bool] = None
+
+
+def _check_gstreamer_available() -> bool:
+    """Check if OpenCV was built with GStreamer support.
+    
+    Caches the result to avoid repeated checks.
+    """
+    global _gstreamer_available
+    if _gstreamer_available is not None:
+        return _gstreamer_available
+    
+    try:
+        # Check if OpenCV has GStreamer backend support
+        build_info = cv2.getBuildInformation()
+        _gstreamer_available = "GStreamer" in build_info and "YES" in build_info.split("GStreamer")[1].split("\n")[0]
+        if _gstreamer_available:
+            logging.info("GStreamer support detected in OpenCV build")
+        else:
+            logging.info("GStreamer support not available in OpenCV build")
+    except Exception:
+        _gstreamer_available = False
+        logging.debug("Could not check GStreamer availability", exc_info=True)
+    
+    return _gstreamer_available
+
+
 class CaptureWorker(QThread):
     """Background thread for capturing frames from a camera."""
     
@@ -232,9 +260,10 @@ class CaptureWorker(QThread):
                     return None
                 return local_cap
 
-            # Try GStreamer first if enabled (more efficient MJPEG pipeline)
+            # Try GStreamer first if enabled and available (more efficient MJPEG pipeline)
             if (
                 config.USE_GSTREAMER
+                and _check_gstreamer_available()
                 and platform.system() == "Linux"
                 and isinstance(self.stream_link, int)
             ):
@@ -277,9 +306,9 @@ class CaptureWorker(QThread):
                     )
                     cap = None
 
-            # Fallback to V4L2 if GStreamer failed or not enabled
+            # Fallback to V4L2 if GStreamer failed or not enabled/available
             if cap is None:
-                if config.USE_GSTREAMER:
+                if config.USE_GSTREAMER and _check_gstreamer_available():
                     logging.info(
                         "Camera %s: GStreamer unavailable, falling back to V4L2",
                         self.stream_link,
@@ -305,12 +334,6 @@ class CaptureWorker(QThread):
                 except Exception:
                     pass
                 return
-
-            assert cap is not None
-
-            # Only apply these settings for V4L2 backend (not needed for GStreamer)
-            if backend_name == "V4L2":
-                pass
 
             if cap.isOpened():
                 self._cap = cap

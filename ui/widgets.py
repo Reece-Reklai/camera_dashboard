@@ -47,8 +47,7 @@ class FullscreenOverlay(QtWidgets.QWidget):
         """Exit fullscreen on left click/tap."""
         if a0.button() == QtCore.Qt.MouseButton.LeftButton:
             self.on_click_exit()
-        if a0:
-            super().mousePressEvent(a0)
+        super().mousePressEvent(a0)
 
     def event(self, a0: QtCore.QEvent) -> bool:  # type: ignore[override]
         # Only trigger exit on TouchEnd to prevent double-triggering
@@ -242,6 +241,7 @@ class CameraWidget(QtWidgets.QWidget):
         # Compensate for render overhead to hit actual target FPS.
         if not self.settings_mode:
             self.ui_render_fps = max(1, int(ui_fps))
+            self.base_ui_fps = self.ui_render_fps  # Store original for FPS recovery
             interval = max(1, int(1000 / self.ui_render_fps) - config.RENDER_OVERHEAD_MS)
             self.render_timer = QTimer(self)
             self.render_timer.setInterval(interval)
@@ -249,6 +249,7 @@ class CameraWidget(QtWidgets.QWidget):
             self.render_timer.start()
         else:
             self.ui_render_fps = 0
+            self.base_ui_fps = 0
             self.render_timer = None
 
         # Optional UI FPS diagnostics (only for real cameras)
@@ -310,6 +311,7 @@ class CameraWidget(QtWidgets.QWidget):
 
         if ui_fps is not None:
             self._apply_ui_fps(ui_fps)
+            self.base_ui_fps = max(1, int(ui_fps))  # Store original for FPS recovery
 
         cap_w, cap_h = request_capture_size if request_capture_size else (None, None)
         self.worker = CaptureWorker(
@@ -581,16 +583,19 @@ class CameraWidget(QtWidgets.QWidget):
         try:
             if frame_bgr is None:
                 return
-            # Only store; UI thread renders on its timer.
+            # Return previous frame to pool BEFORE updating _latest_frame
+            # to avoid race condition where render timer could access frame
+            # while it's being returned to the pool
             previous_frame = self._latest_frame
-            self._latest_frame = frame_bgr
-            self._frame_id += 1
-            self._last_frame_ts = time.time()
             if previous_frame is not None and self.worker is not None:
                 try:
                     self.worker.return_frame(previous_frame)
                 except Exception:
                     logging.debug("Failed to return frame to pool", exc_info=True)
+            # Now safe to update the latest frame
+            self._latest_frame = frame_bgr
+            self._frame_id += 1
+            self._last_frame_ts = time.time()
         except Exception:
             logging.exception("on_frame")
 
@@ -634,6 +639,8 @@ class CameraWidget(QtWidgets.QWidget):
                     stale_duration,
                 )
                 self._latest_frame = None
+                # Reset frame IDs to ensure placeholder renders on next call
+                self._last_rendered_id = -1
                 self._render_placeholder("DISCONNECTED")
                 self._restart_capture_if_stale()
                 return
@@ -948,3 +955,37 @@ class CameraWidget(QtWidgets.QWidget):
                 self.worker.stop()
         except Exception:
             pass
+
+    def detach_camera(self) -> Optional[int]:
+        """Detach camera from this widget and return to placeholder state.
+        
+        Returns the camera index that was detached, or None if not applicable.
+        """
+        if not self.capture_enabled or self.settings_mode:
+            return None
+        
+        detached_index = self.camera_stream_link
+        
+        # Stop capture worker
+        if self.worker:
+            try:
+                self.worker.stop()
+            except Exception:
+                logging.debug("Error stopping worker during detach", exc_info=True)
+            self.worker = None
+        
+        # Reset to placeholder state
+        self.capture_enabled = False
+        self.camera_stream_link = None
+        self._latest_frame = None
+        self._last_frame_ts = 0.0
+        self._frame_id = 0
+        self._last_rendered_id = -1
+        self._restart_events.clear()
+        self._restart_limit_logged = False
+        
+        # Update display
+        self._render_placeholder(self.placeholder_text or "DISCONNECTED")
+        
+        logging.info("Detached camera %s from widget %s", detached_index, self.widget_id)
+        return detached_index

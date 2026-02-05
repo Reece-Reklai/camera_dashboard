@@ -6,7 +6,6 @@ __all__ = [
     "apply_config",
     "configure_logging",
     "choose_profile",
-    "dprint",
     "config",
     "CONFIG_PATH",
     "CAMERA_SLOT_COUNT",
@@ -27,8 +26,6 @@ __all__ = [
     "test_single_camera",
     # performance module exports
     "is_system_stressed",
-    "read_cpu_load_ratio",
-    "read_cpu_temp_c",
 ]
 
 from .config import (
@@ -36,7 +33,6 @@ from .config import (
     apply_config,
     configure_logging,
     choose_profile,
-    dprint,
     CONFIG_PATH,
     CAMERA_SLOT_COUNT,
     DYNAMIC_FPS_ENABLED,
@@ -51,4 +47,4 @@ from .config import (
     HEALTH_LOG_INTERVAL_SEC,
 )
 from .camera import CaptureWorker, find_working_cameras, get_video_indexes, test_single_camera
-from .performance import is_system_stressed, read_cpu_load_ratio, read_cpu_temp_c
+from .performance import is_system_stressed

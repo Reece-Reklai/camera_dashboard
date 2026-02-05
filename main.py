@@ -105,7 +105,11 @@ def main() -> None:
         logging.info("Restart requested from settings.")
         safe_cleanup(camera_widgets)
         python = sys.executable
-        os.execv(python, [python] + sys.argv)
+        try:
+            os.execv(python, [python] + sys.argv)
+        except OSError as e:
+            logging.error("Failed to restart application: %s", e)
+            sys.exit(1)
 
     night_mode_state = {"enabled": False}
 
@@ -213,11 +217,12 @@ def main() -> None:
                     new_fps = max(config.MIN_DYNAMIC_FPS, cur - 2)
                     if new_fps < cur:
                         w.set_dynamic_fps(new_fps)
-                    ui_base = w.ui_render_fps or ui_fps
+                    # Use widget's base_ui_fps for consistent recovery target
+                    cur_ui = w.ui_render_fps or ui_fps
                     new_ui = max(
-                        config.MIN_DYNAMIC_UI_FPS, ui_base - config.UI_FPS_STEP
+                        config.MIN_DYNAMIC_UI_FPS, cur_ui - config.UI_FPS_STEP
                     )
-                    if new_ui < ui_base:
+                    if new_ui < cur_ui:
                         w.set_dynamic_ui_fps(new_ui)
                 stress_counter["stress"] = 0
                 logging.info(
@@ -235,9 +240,11 @@ def main() -> None:
                     if new_fps > cur:
                         w.set_dynamic_fps(new_fps)
                         fps_restored = True
-                    ui_base = w.ui_render_fps or ui_fps
-                    new_ui = min(ui_fps, ui_base + config.UI_FPS_STEP)
-                    if new_ui > ui_base:
+                    # Restore toward widget's original base_ui_fps, not profile ui_fps
+                    base_ui = w.base_ui_fps or ui_fps
+                    cur_ui = w.ui_render_fps or base_ui
+                    new_ui = min(base_ui, cur_ui + config.UI_FPS_STEP)
+                    if new_ui > cur_ui:
                         w.set_dynamic_ui_fps(new_ui)
                         fps_restored = True
                 stress_counter["recover"] = 0
@@ -250,56 +257,91 @@ def main() -> None:
         perf_timer.start()
 
     # Background rescan to attach new cameras to empty slots
-    if placeholder_slots:
+    rescan_timer = None
 
-        def rescan_and_attach():
-            """Scan for new cameras and attach them to placeholders."""
+    def rescan_and_attach():
+        """Scan for new cameras and attach them to placeholders."""
+        nonlocal rescan_timer
+        
+        # First, check for cameras that have permanently failed and detach them
+        # This converts them back to placeholder slots
+        for w in list(camera_widgets):
+            if not w.capture_enabled:
+                continue
+            # Check if widget has exceeded restart limit and is in extended cooldown
+            # We detect this by checking if _restart_limit_logged is set
+            if getattr(w, '_restart_limit_logged', False):
+                # Check if extended cooldown has passed (2x restart window)
+                extended_cooldown = w._restart_window_sec * 2
+                now = time.time()
+                if (now - w._last_restart_ts) >= extended_cooldown:
+                    # Camera has been disconnected long enough, detach it
+                    detached_idx = w.detach_camera()
+                    if detached_idx is not None:
+                        camera_widgets.remove(w)
+                        placeholder_slots.append(w)
+                        active_indexes.discard(detached_idx)
+                        failed_indexes[detached_idx] = now
+                        logging.info(
+                            "Camera %d detached after prolonged failure, slot available for reuse",
+                            detached_idx
+                        )
+                        # Restart rescan timer if it was stopped
+                        if rescan_timer is not None and not rescan_timer.isActive():
+                            rescan_timer.start()
+                            logging.info("Restarted rescan timer for detached camera slot")
+        
+        if not placeholder_slots:
+            # All slots filled, stop the timer
+            if rescan_timer is not None and rescan_timer.isActive():
+                rescan_timer.stop()
+                logging.info("All camera slots filled, stopping rescan timer")
+            return
+
+        now = time.time()
+        indexes = get_video_indexes()
+
+        candidates = []
+        for idx in indexes:
+            if idx in active_indexes:
+                continue
+            last_failed = failed_indexes.get(idx)
+            if (
+                last_failed
+                and (now - last_failed) < config.FAILED_CAMERA_COOLDOWN_SEC
+            ):
+                continue
+            candidates.append(idx)
+
+        if not candidates:
+            return
+
+        for idx in candidates:
             if not placeholder_slots:
-                return
+                break
 
-            now = time.time()
-            indexes = get_video_indexes()
+            ok = test_single_camera(
+                idx,
+                retries=2,
+                retry_delay=0.15,
+                allow_kill=False,
+            )
+            if ok is not None:
+                slot = placeholder_slots.pop(0)
+                slot.attach_camera(ok, cap_fps, (cap_w, cap_h), ui_fps=ui_fps)
+                slot.set_night_mode(night_mode_state["enabled"])
+                camera_widgets.append(slot)
+                active_indexes.add(ok)
+                failed_indexes.pop(ok, None)
+                logging.info("Attached camera %d to empty slot", ok)
+            else:
+                failed_indexes[idx] = now
 
-            candidates = []
-            for idx in indexes:
-                if idx in active_indexes:
-                    continue
-                last_failed = failed_indexes.get(idx)
-                if (
-                    last_failed
-                    and (now - last_failed) < config.FAILED_CAMERA_COOLDOWN_SEC
-                ):
-                    continue
-                candidates.append(idx)
-
-            if not candidates:
-                return
-
-            for idx in candidates:
-                if not placeholder_slots:
-                    break
-
-                ok = test_single_camera(
-                    idx,
-                    retries=2,
-                    retry_delay=0.15,
-                    allow_kill=False,
-                )
-                if ok is not None:
-                    slot = placeholder_slots.pop(0)
-                    slot.attach_camera(ok, cap_fps, (cap_w, cap_h), ui_fps=ui_fps)
-                    slot.set_night_mode(night_mode_state["enabled"])
-                    camera_widgets.append(slot)
-                    active_indexes.add(ok)
-                    failed_indexes.pop(ok, None)
-                    logging.info("Attached camera %d to empty slot", ok)
-                else:
-                    failed_indexes[idx] = now
-
-        rescan_timer = QTimer(mw)
-        rescan_timer.setInterval(config.RESCAN_INTERVAL_MS)
-        rescan_timer.timeout.connect(rescan_and_attach)
-        rescan_timer.start()
+    rescan_timer = QTimer(mw)
+    rescan_timer.setInterval(config.RESCAN_INTERVAL_MS)
+    rescan_timer.timeout.connect(rescan_and_attach)
+    # Always start rescan timer - it handles both attach and detach scenarios
+    rescan_timer.start()
 
     if config.HEALTH_LOG_INTERVAL_SEC > 0:
         health_timer = QTimer(mw)

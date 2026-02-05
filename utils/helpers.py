@@ -106,8 +106,8 @@ def kill_device_holders(device_path: str, grace: float = 0.4) -> bool:
 
 
 def log_health_summary(
-    camera_widgets: list[object],
-    placeholder_slots: list[object],
+    camera_widgets: list["CameraWidget"],
+    placeholder_slots: list["CameraWidget"],
     active_indexes: set[int],
     failed_indexes: dict[int, float],
     stale_threshold_sec: float = 10.0,

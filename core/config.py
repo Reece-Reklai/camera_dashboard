@@ -404,9 +404,3 @@ def choose_profile(camera_count: int) -> tuple[int, int, int, int]:
     scaled_ui_fps = max(MIN_DYNAMIC_UI_FPS, int(base_ui_fps * fps_scale))
     
     return (scaled_w, scaled_h, scaled_fps, scaled_ui_fps)
-
-
-def dprint(*args: Any, **kwargs: Any) -> None:
-    """Lightweight debug print wrapper."""
-    if DEBUG_PRINTS:
-        print(*args, **kwargs)
