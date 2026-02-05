@@ -125,65 +125,30 @@ echo_section "6) Creating logs directory"
 mkdir -p "$SCRIPT_DIR/logs"
 echo "Logs directory: $SCRIPT_DIR/logs"
 
-# ---------- 7) install systemd service ----------
+# ---------- 7) create desktop shortcut ----------
 
-echo_section "7) Installing systemd service"
+echo_section "7) Creating desktop shortcut"
 
-SERVICE_NAME="camera-dashboard.service"
-SERVICE_SRC="$SCRIPT_DIR/${SERVICE_NAME}"
-SERVICE_DST="/etc/systemd/system/${SERVICE_NAME}"
+DESKTOP_DIR="$HOME/Desktop"
+DESKTOP_FILE="$DESKTOP_DIR/CameraDashboard.desktop"
 
-# Generate service file with correct paths
-cat > "$SERVICE_SRC" <<EOF
-[Unit]
-Description=Camera Dashboard
-After=network.target graphical.target
-Wants=graphical.target
+mkdir -p "$DESKTOP_DIR"
 
-[Service]
-Type=notify
-WorkingDirectory=$SCRIPT_DIR
-ExecStart=$SCRIPT_DIR/.venv/bin/python3 $SCRIPT_DIR/main.py
-Restart=always
-RestartSec=2
-User=$USER
-Group=$USER
-Environment=DISPLAY=:0
-Environment=PYTHONUNBUFFERED=1
-Environment=CAMERA_DASHBOARD_CONFIG=$SCRIPT_DIR/config.ini
-Environment=CAMERA_DASHBOARD_LOG_FILE=$SCRIPT_DIR/logs/camera_dashboard.log
-Environment=QT_QPA_PLATFORM=xcb
-WatchdogSec=15
-NotifyAccess=main
-Nice=-5
-NoNewPrivileges=true
-
-[Install]
-WantedBy=graphical.target
+cat > "$DESKTOP_FILE" <<EOF
+[Desktop Entry]
+Name=Camera Dashboard
+Comment=Multi-camera monitoring dashboard
+Exec=$SCRIPT_DIR/.venv/bin/python3 $SCRIPT_DIR/main.py
+Icon=camera-video
+Terminal=false
+Type=Application
+Categories=Video;Monitor;
+StartupNotify=true
 EOF
 
-echo "Generated service file with paths for user: $USER"
-echo "  WorkingDirectory: $SCRIPT_DIR"
-echo "  ExecStart: $SCRIPT_DIR/.venv/bin/python3 $SCRIPT_DIR/main.py"
-
-if [[ -f "${SERVICE_SRC}" ]]; then
-  echo "Installing ${SERVICE_NAME} to ${SERVICE_DST}"
-  sudo cp "${SERVICE_SRC}" "${SERVICE_DST}"
-  echo "Reloading systemd"
-  sudo systemctl daemon-reload
-  echo "Enabling ${SERVICE_NAME}"
-  sudo systemctl enable "${SERVICE_NAME}"
-  echo ""
-  echo "Service installed but NOT started automatically."
-  echo "To start the service, run:"
-  echo "  sudo systemctl start ${SERVICE_NAME}"
-  echo ""
-  echo "To check status:"
-  echo "  sudo systemctl status ${SERVICE_NAME}"
-else
-  echo "Service file not found: ${SERVICE_SRC}"
-  echo "Skipping systemd install."
-fi
+chmod +x "$DESKTOP_FILE"
+echo "Desktop shortcut created: $DESKTOP_FILE"
+echo "Double-click the icon on your desktop to launch the app."
 
 # ---------- 8) quick test ----------
 
@@ -218,16 +183,14 @@ echo_section "9) Finished"
 cat <<EOF
 Installation complete!
 
-To run the app manually:
+To run the app:
 
-  cd $SCRIPT_DIR
-  source .venv/bin/activate
-  python3 main.py
-
-To run via systemd service:
-
-  sudo systemctl start camera-dashboard
-  sudo systemctl status camera-dashboard
+  Double-click "Camera Dashboard" on your desktop
+  
+  Or from terminal:
+    cd $SCRIPT_DIR
+    source .venv/bin/activate
+    python3 main.py
 
 To run tests:
 
@@ -237,13 +200,11 @@ To run tests:
 
 To view logs:
 
-  journalctl -u camera-dashboard -f
-  # or
   tail -f logs/camera_dashboard.log
 
-Notes:
-- The app requires a display (X11/Wayland)
-- Run as a normal user, not root
-- Exit with Ctrl+Q or Q key, or Ctrl+C in terminal
+Controls:
+- Click on camera: Toggle fullscreen view
+- Press Q or Ctrl+Q: Quit application
+- Hold click 400ms: Enter swap mode
 
 EOF
