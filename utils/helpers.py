@@ -1,7 +1,7 @@
 """
 Utility functions for Camera Dashboard.
 
-Includes system helpers, process management, and systemd integration.
+Includes system helpers and process management.
 """
 
 from __future__ import annotations
@@ -10,7 +10,6 @@ import logging
 import os
 import re
 import signal
-import socket
 import subprocess
 import time
 from typing import TYPE_CHECKING
@@ -106,35 +105,6 @@ def kill_device_holders(device_path: str, grace: float = 0.4) -> bool:
     return True
 
 
-def systemd_notify(message: str) -> None:
-    """Send a notification to systemd."""
-    sock = None
-    try:
-        sock_path = os.environ.get("NOTIFY_SOCKET")
-        if not sock_path:
-            return
-        if sock_path[0] == "@":
-            sock_path = "\0" + sock_path[1:]
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-        sock.connect(sock_path)
-        sock.sendall(message.encode("utf-8"))
-    except Exception:
-        logging.debug("systemd notify failed")
-    finally:
-        if sock:
-            try:
-                sock.close()
-            except Exception:
-                pass
-
-
-def write_watchdog_heartbeat() -> None:
-    """Write watchdog heartbeat if running under systemd."""
-    if os.getenv("WATCHDOG_USEC") is None:
-        return
-    systemd_notify("WATCHDOG=1")
-
-
 def log_health_summary(
     camera_widgets: list[CameraWidget],
     placeholder_slots: list[CameraWidget],
@@ -191,4 +161,3 @@ def log_health_summary(
         len(active_indexes),
         len(failed_indexes),
     )
-    write_watchdog_heartbeat()

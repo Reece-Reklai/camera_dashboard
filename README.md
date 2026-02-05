@@ -35,7 +35,7 @@ A multi-camera monitoring system optimized for Raspberry Pi, designed for blind-
 
 ### System Integration
 
-- **Systemd Service**: Auto-start on boot with watchdog monitoring
+- **Desktop Shortcut**: Click to launch from desktop
 - **Zero Configuration**: Works out of the box with standard USB cameras
 - **Robust Recovery**: Automatic camera reconnection with exponential backoff
 
@@ -96,7 +96,7 @@ The installer will:
 2. Install system dependencies (PyQt6, PyQt6-OpenGL, OpenCV, GStreamer)
 3. Create a Python virtual environment with system-site-packages
 4. Configure camera permissions (adds user to `video` group)
-5. Install and enable the systemd service
+5. Create a desktop shortcut for easy launching
 
 ### Manual Installation
 
@@ -152,13 +152,12 @@ mkdir -p logs
 ### Running the Application
 
 ```bash
-# Manual run
+# Manual run from terminal
 source .venv/bin/activate
 python3 main.py
 
-# Or via systemd service
-sudo systemctl start camera-dashboard
-sudo systemctl status camera-dashboard
+# Or double-click the desktop shortcut
+# ~/Desktop/CameraDashboard.desktop
 ```
 
 ### Controls
@@ -238,37 +237,6 @@ export CAMERA_DASHBOARD_LOG_FILE=/path/to/app.log
 
 ---
 
-## Systemd Service
-
-The installer automatically creates and enables a systemd service.
-
-### Service Management
-
-```bash
-# Start/stop/restart
-sudo systemctl start camera-dashboard
-sudo systemctl stop camera-dashboard
-sudo systemctl restart camera-dashboard
-
-# Check status
-sudo systemctl status camera-dashboard
-
-# View logs
-journalctl -u camera-dashboard -f
-
-# Disable auto-start
-sudo systemctl disable camera-dashboard
-```
-
-### Service Features
-
-- **Auto-restart**: Restarts on crash (2-second delay)
-- **Watchdog**: 15-second watchdog timeout with health pings
-- **Nice Priority**: Runs at elevated priority (-5)
-- **Security**: NoNewPrivileges enabled
-
----
-
 ## Testing
 
 ### Running Tests through pytest
@@ -297,8 +265,8 @@ sudo systemctl disable camera-dashboard
 | `test_config.py` | 20 | Config parsing, validation, defaults |
 | `test_camera.py` | 13 | Camera discovery, capture worker, GStreamer |
 | `test_widgets.py` | 18 | Widget lifecycle, fullscreen, night mode |
-| `test_helpers.py` | 21 | Utility functions, systemd, process management |
-| **Total** | **72** | |
+| `test_helpers.py` | 15 | Utility functions, process management |
+| **Total** | **66** | |
 
 ### Manual Test Run
 
@@ -372,7 +340,6 @@ python3 -c "from PyQt6.QtOpenGL import QOpenGLWidget; print('OpenGL OK')"
 ```bash
 # Check logs
 cat logs/camera_dashboard.log | tail -50
-journalctl -u camera-dashboard --no-pager | tail -50
 
 # Run with debug output
 DEBUG_PRINTS=true python3 main.py
@@ -435,7 +402,7 @@ camera_dashboard/
 │   └── layout.py             # Grid layout helpers
 ├── utils/                    # Utilities
 │   ├── __init__.py           # Exports: system helpers
-│   └── helpers.py            # Process management, systemd integration
+│   └── helpers.py            # Process management, health logging
 ├── tests/                    # Test suite
 │   ├── __init__.py           # Test package marker
 │   ├── conftest.py           # Pytest fixtures
@@ -447,7 +414,6 @@ camera_dashboard/
 ├── install.sh                # Automated installer
 ├── test.sh                   # Test runner script
 ├── pytest.ini                # Pytest configuration
-├── camera-dashboard.service  # Systemd service (auto-generated)
 ├── requirements.txt          # Python dependencies
 ├── README.md                 # This file
 ├── LICENSE.MIT               # MIT License
@@ -465,7 +431,7 @@ camera_dashboard/
 | `core.performance` | CPU load and temperature monitoring, stress detection |
 | `ui.widgets` | `CameraWidget` for camera tiles, `FullscreenOverlay` for fullscreen view |
 | `ui.layout` | Grid layout calculation based on camera count |
-| `utils.helpers` | System utilities, process management, systemd notifications |
+| `utils.helpers` | System utilities, process management, health logging |
 
 ---
 

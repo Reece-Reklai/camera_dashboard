@@ -4,7 +4,6 @@ Tests for utils/helpers.py utility functions.
 
 import os
 import signal
-import socket
 import subprocess
 from unittest import mock
 
@@ -146,66 +145,12 @@ class TestKillDeviceHolders:
         mock_kill.assert_any_call(fake_pid, signal.SIGTERM)
 
 
-class TestSystemdNotify:
-    """Tests for systemd_notify function."""
-
-    @mock.patch.dict(os.environ, {}, clear=True)
-    def test_no_op_without_notify_socket(self):
-        """Test does nothing when NOTIFY_SOCKET not set."""
-        # Should not raise
-        helpers.systemd_notify("READY=1")
-
-    @mock.patch("socket.socket")
-    @mock.patch.dict(os.environ, {"NOTIFY_SOCKET": "/run/systemd/notify"})
-    def test_sends_message_to_socket(self, mock_socket_class):
-        """Test sends message to systemd socket."""
-        mock_sock = mock.MagicMock()
-        mock_socket_class.return_value = mock_sock
-
-        helpers.systemd_notify("READY=1")
-
-        mock_sock.connect.assert_called_once_with("/run/systemd/notify")
-        mock_sock.sendall.assert_called_once_with(b"READY=1")
-        mock_sock.close.assert_called_once()
-
-    @mock.patch("socket.socket")
-    @mock.patch.dict(os.environ, {"NOTIFY_SOCKET": "@/run/systemd/notify"})
-    def test_handles_abstract_socket(self, mock_socket_class):
-        """Test handles abstract socket addresses (@ prefix)."""
-        mock_sock = mock.MagicMock()
-        mock_socket_class.return_value = mock_sock
-
-        helpers.systemd_notify("WATCHDOG=1")
-
-        # Abstract sockets use null byte prefix
-        mock_sock.connect.assert_called_once_with("\0/run/systemd/notify")
-
-
-class TestWriteWatchdogHeartbeat:
-    """Tests for write_watchdog_heartbeat function."""
-
-    @mock.patch("utils.helpers.systemd_notify")
-    @mock.patch.dict(os.environ, {}, clear=True)
-    def test_no_op_without_watchdog_usec(self, mock_notify):
-        """Test does nothing when WATCHDOG_USEC not set."""
-        helpers.write_watchdog_heartbeat()
-        mock_notify.assert_not_called()
-
-    @mock.patch("utils.helpers.systemd_notify")
-    @mock.patch.dict(os.environ, {"WATCHDOG_USEC": "5000000"})
-    def test_sends_watchdog_message(self, mock_notify):
-        """Test sends WATCHDOG=1 when enabled."""
-        helpers.write_watchdog_heartbeat()
-        mock_notify.assert_called_once_with("WATCHDOG=1")
-
-
 class TestLogHealthSummary:
     """Tests for log_health_summary function."""
 
-    @mock.patch("utils.helpers.write_watchdog_heartbeat")
     @mock.patch("logging.info")
     @mock.patch("logging.warning")
-    def test_logs_health_summary(self, mock_warning, mock_log, mock_watchdog):
+    def test_logs_health_summary(self, mock_warning, mock_log):
         """Test logs camera health information."""
         import time
         now = time.time()
@@ -242,12 +187,10 @@ class TestLogHealthSummary:
         call_args = mock_log.call_args
         assert "Health" in call_args[0][0]
         assert call_args[0][1] == 2  # online count (widgets with fresh frames)
-        mock_watchdog.assert_called_once()
     
-    @mock.patch("utils.helpers.write_watchdog_heartbeat")
     @mock.patch("logging.info")
     @mock.patch("logging.warning")
-    def test_detects_stale_frames(self, mock_warning, mock_log, mock_watchdog):
+    def test_detects_stale_frames(self, mock_warning, mock_log):
         """Test that stale frames are detected and logged."""
         import time
         now = time.time()
@@ -268,10 +211,9 @@ class TestLogHealthSummary:
         warning_call = mock_warning.call_args[0][0]
         assert "stale" in warning_call.lower()
     
-    @mock.patch("utils.helpers.write_watchdog_heartbeat")
     @mock.patch("logging.info")
     @mock.patch("logging.warning")
-    def test_detects_unhealthy_worker(self, mock_warning, mock_log, mock_watchdog):
+    def test_detects_unhealthy_worker(self, mock_warning, mock_log):
         """Test that unhealthy workers are detected and logged."""
         import time
         now = time.time()

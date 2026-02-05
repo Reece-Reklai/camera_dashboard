@@ -26,7 +26,7 @@ from core import (
     test_single_camera,
 )
 from ui import CameraWidget, get_smart_grid
-from utils import log_health_summary, systemd_notify, write_watchdog_heartbeat
+from utils import log_health_summary
 
 
 def safe_cleanup(widgets: list[CameraWidget]) -> None:
@@ -50,7 +50,6 @@ def main() -> None:
     logging.info("Config loaded from %s", config.CONFIG_PATH)
 
     app = QtWidgets.QApplication(sys.argv)
-    systemd_notify("READY=1")
 
     camera_widgets = []
     all_widgets = []
@@ -316,13 +315,6 @@ def main() -> None:
             )
         )
         health_timer.start()
-
-    # Systemd watchdog heartbeat (separate from health logging for reliability)
-    # Send heartbeat every 5 seconds to satisfy the 15s WatchdogSec
-    watchdog_timer = QTimer(mw)
-    watchdog_timer.setInterval(5000)
-    watchdog_timer.timeout.connect(write_watchdog_heartbeat)
-    watchdog_timer.start()
 
     app.aboutToQuit.connect(lambda: safe_cleanup(camera_widgets))
 
