@@ -90,8 +90,11 @@ echo_section "4) Verifying Python packages"
 
 pip install --upgrade pip
 
+# Install test dependencies
+pip install --quiet pytest pytest-qt
+
 # Test imports
-if python3 -c "from PyQt6 import QtCore, QtGui, QtWidgets; import cv2; import pyudev; print('All imports OK')" 2>/dev/null; then
+if python3 -c "from PyQt6 import QtCore, QtGui, QtWidgets; import cv2; import pyudev; import pytest; print('All imports OK')" 2>/dev/null; then
   echo "All required Python packages are available."
 else
   echo "ERROR: Required Python packages not available!"
@@ -211,7 +214,7 @@ fi
 
 echo_section "9) Finished"
 
-cat <<'EOF'
+cat <<EOF
 Installation complete!
 
 To run the app manually:
@@ -224,6 +227,12 @@ To run via systemd service:
 
   sudo systemctl start camera-dashboard
   sudo systemctl status camera-dashboard
+
+To run tests:
+
+  ./test.sh           # Run all tests
+  ./test.sh -v        # Verbose output
+  ./test.sh -k "config"  # Run specific tests
 
 To view logs:
 

@@ -61,6 +61,7 @@ A multi-camera monitoring system optimized for Raspberry Pi, designed for blind-
 - OpenCV (with GStreamer support)
 - pyudev (USB device detection)
 - GStreamer 1.0 (optional, for optimized capture)
+- pytest, pytest-qt (for running tests)
 
 ---
 
@@ -265,6 +266,55 @@ sudo systemctl disable camera-dashboard
 
 ---
 
+## Testing
+
+The project includes a comprehensive test suite using pytest.
+
+### Running Tests
+
+```bash
+# Run all tests
+./test.sh
+
+# Run with verbose output
+./test.sh -v
+
+# Run specific test file
+./test.sh tests/test_config.py
+
+# Run tests matching a pattern
+./test.sh -k "fullscreen"
+
+# Run with short traceback
+./test.sh --tb=short
+```
+
+### Test Coverage
+
+| Test File | Tests | Coverage |
+|-----------|-------|----------|
+| `test_config.py` | 20 | Config parsing, validation, defaults |
+| `test_camera.py` | 13 | Camera discovery, capture worker, GStreamer |
+| `test_widgets.py` | 18 | Widget lifecycle, fullscreen, night mode |
+| `test_helpers.py` | 19 | Utility functions, systemd, process management |
+| **Total** | **70** | |
+
+### Manual Test Run
+
+```bash
+# Activate virtual environment first
+source .venv/bin/activate
+
+# Run pytest directly
+python -m pytest tests/ -v
+
+# Run with coverage (requires pytest-cov)
+pip install pytest-cov
+python -m pytest tests/ --cov=core --cov=ui --cov=utils
+```
+
+---
+
 ## Performance Metrics
 
 ### Raspberry Pi 5 Benchmarks
@@ -372,8 +422,17 @@ camera_dashboard/
 ├── utils/                    # Utilities
 │   ├── __init__.py           # Exports: system helpers
 │   └── helpers.py            # Process management, systemd integration
+├── tests/                    # Test suite
+│   ├── __init__.py           # Test package marker
+│   ├── conftest.py           # Pytest fixtures
+│   ├── test_config.py        # Config tests
+│   ├── test_camera.py        # Camera tests
+│   ├── test_widgets.py       # Widget tests
+│   └── test_helpers.py       # Helper function tests
 ├── config.ini                # Configuration file
 ├── install.sh                # Automated installer
+├── test.sh                   # Test runner script
+├── pytest.ini                # Pytest configuration
 ├── camera-dashboard.service  # Systemd service (auto-generated)
 ├── requirements.txt          # Python dependencies
 ├── README.md                 # This file

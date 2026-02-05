@@ -28,6 +28,7 @@ class FullscreenOverlay(QtWidgets.QWidget):
         """Create a full-window view with a centered QLabel."""
         super().__init__(None, Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
         self.on_click_exit = on_click_exit
+        self._touch_active = False
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
         self.setStyleSheet("background:black;")
@@ -49,11 +50,14 @@ class FullscreenOverlay(QtWidgets.QWidget):
             super().mousePressEvent(a0)
 
     def event(self, a0: QtCore.QEvent) -> bool:  # type: ignore[override]
-        if a0.type() in (
-            QtCore.QEvent.Type.TouchBegin,
-            QtCore.QEvent.Type.TouchEnd,
-        ):
-            self.on_click_exit()
+        # Only trigger exit on TouchEnd to prevent double-triggering
+        if a0.type() == QtCore.QEvent.Type.TouchBegin:
+            self._touch_active = True
+            return True
+        if a0.type() == QtCore.QEvent.Type.TouchEnd:
+            if self._touch_active:
+                self._touch_active = False
+                self.on_click_exit()
             return True
         return super().event(a0)
 
@@ -113,6 +117,8 @@ class CameraWidget(QtWidgets.QWidget):
         self._grid_parent = None
         self._touch_active = False
         self.swap_active = False
+        self._last_fullscreen_toggle_ts = 0.0
+        self._fullscreen_debounce_ms = 200  # Minimum ms between fullscreen toggles
 
         self._fs_overlay = None
 
@@ -526,7 +532,14 @@ class CameraWidget(QtWidgets.QWidget):
             logging.exception("do_swap")
 
     def toggle_fullscreen(self) -> None:
-        """Toggle between fullscreen and grid view."""
+        """Toggle between fullscreen and grid view with debounce protection."""
+        # Debounce rapid toggles to prevent race conditions
+        now = time.time() * 1000.0
+        if (now - self._last_fullscreen_toggle_ts) < self._fullscreen_debounce_ms:
+            logging.debug("Fullscreen toggle debounced for %s", self.widget_id)
+            return
+        self._last_fullscreen_toggle_ts = now
+
         if self.is_fullscreen:
             self.exit_fullscreen()
         else:

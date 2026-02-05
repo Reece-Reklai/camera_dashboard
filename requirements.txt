@@ -13,6 +13,10 @@ opencv-python==4.6.0
 pyudev==0.24.0
 numpy==1.24.2
 
+# Testing dependencies
+pytest==7.4.0
+pytest-qt==4.2.0
+
 # Minimum versions (for reference if exact versions unavailable):
 # PyQt6>=6.4.0
 # opencv-python>=4.6.0
