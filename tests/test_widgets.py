@@ -296,7 +296,7 @@ class TestDynamicFPS:
 
     @pytest.mark.requires_display
     def test_set_dynamic_fps_respects_minimum(self, qapp):
-        """Test dynamic FPS respects minimum value."""
+        """Test dynamic FPS clamps to MIN_DYNAMIC_FPS when value is too low."""
         from ui.widgets import CameraWidget
         from core import config
         
@@ -308,9 +308,12 @@ class TestDynamicFPS:
             target_fps=30.0,
         )
         
+        # Simulate an active capture widget so set_dynamic_fps doesn't early-return
+        widget.capture_enabled = True
+        
         # Try to set below minimum
         widget.set_dynamic_fps(1.0)
-        assert widget.current_target_fps >= config.MIN_DYNAMIC_FPS
+        assert widget.current_target_fps == config.MIN_DYNAMIC_FPS
         
         widget.cleanup()
 

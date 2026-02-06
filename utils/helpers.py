@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shlex
 import signal
 import subprocess
 import time
@@ -19,10 +20,13 @@ if TYPE_CHECKING:
 
 
 def run_cmd(cmd: str, timeout: int = 2) -> tuple[str, str, int]:
-    """Run a shell command and return stdout, stderr, returncode."""
+    """Run a command and return stdout, stderr, returncode.
+
+    The command string is split with shlex to avoid ``shell=True``.
+    """
     try:
         result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=timeout
+            shlex.split(cmd), capture_output=True, text=True, timeout=timeout
         )
         return result.stdout.strip(), result.stderr.strip(), result.returncode
     except Exception:

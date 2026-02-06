@@ -87,6 +87,8 @@ class CaptureWorker(QThread):
         self._open_fail_count = 0
         # Track if using GStreamer backend for proper cleanup
         self._using_gstreamer = False
+        # Cached FOURCC string, updated by worker thread, read by main thread.
+        self._fourcc: str = "unknown"
         # Lock protects changes to FPS/emit interval from other threads.
         self._fps_lock = threading.Lock()
         
@@ -342,6 +344,7 @@ class CaptureWorker(QThread):
                 try:
                     raw = int(cap.get(cv2.CAP_PROP_FOURCC))
                     fourcc = "".join([chr((raw >> (8 * i)) & 0xFF) for i in range(4)])
+                    self._fourcc = fourcc
                     if fourcc.strip() and fourcc != "MJPG":
                         logging.info(
                             "Camera %s using FOURCC=%s", self.stream_link, fourcc
@@ -469,6 +472,10 @@ class CaptureWorker(QThread):
             return (time.time() - self._last_emit) < 5.0
         return True  # Thread just started, give it time
 
+    def get_fourcc(self) -> str:
+        """Return the cached FOURCC string (thread-safe, no lock needed for reads)."""
+        return self._fourcc
+
 
 # ============================================================
 # CAMERA DISCOVERY
@@ -583,6 +590,6 @@ def find_working_cameras() -> list[int]:
                     logging.exception("Exception confirming camera %d", cam_idx)
         working = final_working
 
-    cv2.destroyAllWindows()
+    working = sorted(working)
     logging.info("FINAL Working cameras: %s", working)
     return working

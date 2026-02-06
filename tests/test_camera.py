@@ -11,7 +11,7 @@ import pytest
 class TestGetVideoIndexes:
     """Test video device index discovery."""
 
-    def test_get_video_indexes_with_devices(self, mock_pyudev):
+    def test_get_video_indexes_with_devices(self):
         """Test finding video device indexes."""
         from core.camera import get_video_indexes
         
@@ -75,7 +75,7 @@ class TestTestSingleCamera:
 class TestFindWorkingCameras:
     """Test multi-camera discovery."""
 
-    def test_find_working_cameras_returns_list(self, mock_video_capture, mock_pyudev):
+    def test_find_working_cameras_returns_list(self, mock_video_capture):
         """Test find_working_cameras returns a list."""
         from core.camera import find_working_cameras
         

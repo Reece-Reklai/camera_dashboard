@@ -78,7 +78,6 @@ class CameraWidget(QtWidgets.QWidget):
         width: int,
         height: int,
         stream_link: Optional[int] = 0,
-        aspect_ratio: bool = False,
         parent: Optional[QtWidgets.QWidget] = None,
         target_fps: Optional[float] = None,
         request_capture_size: Optional[tuple[int, int]] = (640, 480),
@@ -104,7 +103,6 @@ class CameraWidget(QtWidgets.QWidget):
 
         self.screen_width = max(1, width)
         self.screen_height = max(1, height)
-        self.maintain_aspect_ratio = aspect_ratio
         self.camera_stream_link = stream_link
         self.widget_id = f"cam{stream_link}_{id(self)}"
 
@@ -202,6 +200,7 @@ class CameraWidget(QtWidgets.QWidget):
         self._max_restarts_per_window = config.MAX_RESTARTS_PER_WINDOW
         self._restart_events = deque(maxlen=config.MAX_RESTARTS_PER_WINDOW * 2)
         self._last_restart_ts = 0.0
+        self._restart_limit_logged = False
         self._last_status_log_ts = 0.0
         self._last_status_log_interval_sec = 10.0
         self._pixmap_cache = QtGui.QPixmap()
@@ -450,59 +449,9 @@ class CameraWidget(QtWidgets.QWidget):
 
     def _on_mouse_release(self, event: Any) -> bool:
         """Handle mouse release as click/hold action."""
-        try:
-            if (
-                event.button() != QtCore.Qt.MouseButton.LeftButton
-                or not self._press_widget_id
-                or self._press_widget_id != self.widget_id
-            ):
-                return True
-
-            hold_time = (time.time() * 1000.0) - self._press_time
-            logging.debug("Release %s hold=%dms", self.widget_id, int(hold_time))
-
-            swap_parent = self._grid_parent
-            if not swap_parent or not hasattr(swap_parent, "selected_camera"):
-                self._reset_mouse_state()
-                self.toggle_fullscreen()
-                return True
-
-            selected = getattr(swap_parent, "selected_camera", None)
-            if selected == self:
-                logging.debug("Clear swap %s", self.widget_id)
-                setattr(swap_parent, "selected_camera", None)
-                self.swap_active = False
-                self.reset_style()
-                self._reset_mouse_state()
-                return True
-
-            if selected and selected != self and not self.is_fullscreen:
-                other = selected
-                logging.debug("SWAP %s <-> %s", other.widget_id, self.widget_id)
-                self.do_swap(other, self, swap_parent)
-                other.swap_active = False
-                other.reset_style()
-                setattr(swap_parent, "selected_camera", None)
-                self._reset_mouse_state()
-                return True
-
-            if hold_time >= self.hold_threshold_ms and not self.is_fullscreen:
-                logging.debug("ENTER swap %s", self.widget_id)
-                setattr(swap_parent, "selected_camera", self)
-                self.swap_active = True
-                self._layout.setContentsMargins(6, 6, 6, 6)  # Expand margin for yellow border
-                self.setStyleSheet(self.swap_ready_style)
-                self._reset_mouse_state()
-                return True
-
-            logging.debug("Short click fullscreen %s", self.widget_id)
-            self.toggle_fullscreen()
-
-        except Exception:
-            logging.exception("mouse release")
-        finally:
-            self._reset_mouse_state()
-        return True
+        if event.button() != QtCore.Qt.MouseButton.LeftButton:
+            return True
+        return self._handle_release_as_left_click()
 
     def _reset_mouse_state(self) -> None:
         """Clear press state to avoid accidental reuse."""
@@ -921,15 +870,8 @@ class CameraWidget(QtWidgets.QWidget):
             return
         self._last_status_log_ts = now
         format_fourcc = "unknown"
-        cap = getattr(self.worker, "_cap", None) if self.worker else None
-        if cap is not None:
-            try:
-                raw = int(cap.get(cv2.CAP_PROP_FOURCC))
-                format_fourcc = "".join(
-                    [chr((raw >> (8 * i)) & 0xFF) for i in range(4)]
-                )
-            except Exception:
-                format_fourcc = "unknown"
+        if self.worker is not None:
+            format_fourcc = self.worker.get_fourcc()
         logging.info(
             "Camera %s status online=%s fps=%.1f ui_fps=%d fourcc=%s",
             self.camera_stream_link,

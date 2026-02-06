@@ -30,7 +30,7 @@ A multi-camera monitoring system optimized for Raspberry Pi, designed for blind-
 - **GStreamer Pipeline**: Hardware-accelerated MJPEG decoding with jpegdec (with V4L2 fallback)
 - **Dynamic FPS Adjustment**: Automatically reduces frame rate under CPU/thermal stress
 - **Threaded Architecture**: Separate capture threads ensure smooth UI performance
-- **Efficient Rendering**: 15 FPS UI refresh rate balances smoothness and CPU usage
+- **Efficient Rendering**: 20 FPS UI refresh rate balances smoothness and CPU usage
 
 ### System Integration
 
@@ -59,7 +59,6 @@ A multi-camera monitoring system optimized for Raspberry Pi, designed for blind-
 - Python 3.8+
 - PyQt6 (Qt6 GUI framework)
 - OpenCV (with GStreamer support)
-- pyudev (USB device detection)
 - GStreamer 1.0 (for optimized capture with jpegdec)
 - pytest, pytest-qt (for running tests)
 
@@ -112,7 +111,7 @@ sudo apt update && sudo apt upgrade -y
 ```bash
 sudo apt install -y \
   python3 python3-pip python3-venv \
-  python3-pyqt6 python3-opencv python3-pyudev python3-numpy \
+  python3-pyqt6 python3-opencv python3-numpy \
   libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 \
   libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
   libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 \
@@ -294,9 +293,9 @@ python -m pytest tests/ --cov=core --cov=ui --cov=utils
 
 | Cameras | Resolution | Capture FPS | UI FPS | CPU Usage | Memory |
 | ------- | ---------- | ----------- | ------ | --------- | ------ |
-| 1       | 640x480    | 20          | 15     | ~15%      | ~150MB |
-| 2       | 640x480    | 20          | 15     | ~25%      | ~180MB |
-| 3       | 640x480    | 20          | 15     | ~35%      | ~200MB |
+| 1       | 640x480    | 20          | 20     | ~15%      | ~150MB |
+| 2       | 640x480    | 20          | 20     | ~25%      | ~180MB |
+| 3       | 640x480    | 20          | 20     | ~35%      | ~200MB |
 
 ---
 
@@ -372,7 +371,7 @@ cat logs/camera_dashboard.log | tail -50
 
 1. `CaptureWorker` grabs frames via GStreamer or V4L2
 2. Frames emitted to main thread via Qt signals
-3. UI renders at fixed interval (15 FPS) using latest frame
+3. UI renders at fixed interval (20 FPS default) using latest frame
 4. Performance monitor adjusts FPS based on system load
 
 ---

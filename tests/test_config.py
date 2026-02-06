@@ -101,7 +101,7 @@ class TestLoadConfig:
 class TestApplyConfig:
     """Test config application to global variables."""
 
-    def test_apply_config_sets_globals(self, temp_config_file):
+    def test_apply_config_sets_globals(self, temp_config_file, save_restore_config):
         """Test apply_config sets module-level variables."""
         parser = config.load_config(str(temp_config_file))
         config.apply_config(parser)
@@ -113,7 +113,7 @@ class TestApplyConfig:
         assert config.PROFILE_CAPTURE_FPS == 20
         assert config.PROFILE_UI_FPS == 15
 
-    def test_apply_config_bounds_checking(self, tmp_path):
+    def test_apply_config_bounds_checking(self, tmp_path, save_restore_config):
         """Test apply_config enforces bounds on values."""
         config_file = tmp_path / "test.ini"
         config_file.write_text("""
@@ -141,7 +141,7 @@ class TestChooseProfile:
         assert isinstance(result, tuple)
         assert len(result) == 4
 
-    def test_choose_profile_values(self):
+    def test_choose_profile_values(self, save_restore_config):
         """Test choose_profile returns configured values with dynamic scaling."""
         # Set known values
         config.PROFILE_CAPTURE_WIDTH = 640

@@ -53,7 +53,7 @@ echo_section "2) Installing system dependencies (sudo apt install ...)"
 # Core Python and Qt6 dependencies
 sudo apt install -y \
   python3 python3-pip python3-venv \
-  python3-pyqt6 python3-opencv python3-pyudev python3-numpy \
+  python3-pyqt6 python3-opencv python3-numpy \
   libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 \
   libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
   libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 \
@@ -94,11 +94,11 @@ pip install --upgrade pip
 pip install --quiet pytest pytest-qt
 
 # Test imports
-if python3 -c "from PyQt6 import QtCore, QtGui, QtWidgets; import cv2; import pyudev; import pytest; print('All imports OK')" 2>/dev/null; then
+if python3 -c "from PyQt6 import QtCore, QtGui, QtWidgets; import cv2; import pytest; print('All imports OK')" 2>/dev/null; then
   echo "All required Python packages are available."
 else
   echo "ERROR: Required Python packages not available!"
-  echo "Please ensure python3-pyqt6, python3-opencv, and python3-pyudev are installed."
+  echo "Please ensure python3-pyqt6 and python3-opencv are installed."
   exit 1
 fi
 
@@ -138,6 +138,7 @@ cat > "$DESKTOP_FILE" <<EOF
 Name=Camera Dashboard
 Comment=Multi-camera monitoring dashboard
 Exec=$SCRIPT_DIR/.venv/bin/python3 $SCRIPT_DIR/main.py
+Path=$SCRIPT_DIR
 Icon=camera-video
 Terminal=false
 Type=Application

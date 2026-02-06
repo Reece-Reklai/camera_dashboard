@@ -78,18 +78,28 @@ def mock_video_capture():
         yield mock_cap
 
 
-@pytest.fixture
-def mock_pyudev():
-    """Mock pyudev for testing without real devices."""
-    with patch("pyudev.Context") as mock_ctx:
-        mock_device = MagicMock()
-        mock_device.device_node = "/dev/video0"
-        mock_device.get.return_value = "test_camera"
-        
-        mock_context = MagicMock()
-        mock_context.list_devices.return_value = [mock_device]
-        mock_ctx.return_value = mock_context
-        yield mock_ctx
+# Config globals that apply_config and tests may mutate.
+_CONFIG_GLOBALS = [
+    "LOG_LEVEL", "LOG_FILE", "LOG_MAX_BYTES", "LOG_BACKUP_COUNT", "LOG_TO_STDOUT",
+    "DYNAMIC_FPS_ENABLED", "PERF_CHECK_INTERVAL_MS", "MIN_DYNAMIC_FPS",
+    "MIN_DYNAMIC_UI_FPS", "UI_FPS_STEP", "CPU_LOAD_THRESHOLD", "CPU_TEMP_THRESHOLD_C",
+    "STRESS_HOLD_COUNT", "RECOVER_HOLD_COUNT", "STALE_FRAME_TIMEOUT_SEC",
+    "RESTART_COOLDOWN_SEC", "MAX_RESTARTS_PER_WINDOW", "RESTART_WINDOW_SEC",
+    "RESCAN_INTERVAL_MS", "FAILED_CAMERA_COOLDOWN_SEC", "CAMERA_SLOT_COUNT",
+    "HEALTH_LOG_INTERVAL_SEC", "KILL_DEVICE_HOLDERS",
+    "PROFILE_CAPTURE_WIDTH", "PROFILE_CAPTURE_HEIGHT", "PROFILE_CAPTURE_FPS",
+    "PROFILE_UI_FPS", "USE_GSTREAMER",
+]
+
+
+@pytest.fixture(autouse=False)
+def save_restore_config():
+    """Save config globals before a test and restore them afterwards."""
+    from core import config as _cfg
+    saved = {name: getattr(_cfg, name) for name in _CONFIG_GLOBALS}
+    yield
+    for name, value in saved.items():
+        setattr(_cfg, name, value)
 
 
 @pytest.fixture(scope="session")
